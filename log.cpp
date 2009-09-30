@@ -51,8 +51,32 @@
 #endif
 
 
-namespace Log {
+#if defined(_MSC_VER)
 
+unsigned __int64 __rdtsc();
+#pragma intrinsic(__rdtsc)
+#define rdtsc() __rdtsc()
+
+#elif defined(__GNUC__) && (defined(__i386__) || defined(__x86_64__))
+
+#include <stdint.h>
+
+static inline unsigned long long
+rdtsc(void)
+{
+   unsigned long hi, lo;
+   __asm__ __volatile__ ("rdtsc" : "=a"(lo), "=d"(hi));
+   return ((unsigned long long)lo) | (((unsigned long long)hi) << 32);
+}
+
+#else
+
+#define rdtsc() 0
+
+#endif
+
+
+namespace Log {
 
 static gzFile g_gzFile = NULL;
 static char g_szFileName[PATH_MAX];
@@ -248,39 +272,43 @@ void TextF(const char *format, ...) {
     Text(szBuffer);
 }
 
-static LARGE_INTEGER frequency = {0};
-static LARGE_INTEGER startcounter;
+template<class T>
+void TextHex(T value) {
+    const char *hex = "0123456789abcdef";
+    char szBuffer[2*sizeof(T) + 1];
+    for(unsigned i = 0; i < 2*sizeof(T); ++i)
+        szBuffer[i] = hex[(value >> (4*(2*sizeof(T) - (i + 1)))) & 0xf];
+    szBuffer[2*sizeof(T)] = 0;
+    Text(szBuffer);
+}
 
 void BeginCall(const char *function) {
-    EnterCriticalSection(&CriticalSection); 
+    //EnterCriticalSection(&CriticalSection); 
     Indent(1);
     BeginTag("call", "name", function);
     NewLine();
 
-    if(!frequency.QuadPart)
-	QueryPerformanceFrequency(&frequency);
-    
-    QueryPerformanceCounter(&startcounter);
+    Indent(2);
+    BeginTag("starttsc");
+    TextHex(rdtsc());
+    EndTag("starttsc");
+    NewLine();
 }
 
 void EndCall(void) {
-    LARGE_INTEGER endcounter;
-    LONGLONG usecs;
-
-    QueryPerformanceCounter(&endcounter);
-    usecs = (endcounter.QuadPart - startcounter.QuadPart)*1000000/frequency.QuadPart;
-
     Indent(2);
-    BeginTag("duration");
-    TextF("%llu", usecs);
-    EndTag("duration");
+    BeginTag("endtsc");
+    TextHex(rdtsc());
+    EndTag("endtsc");
     NewLine();
 
     Indent(1);
     EndTag("call");
     NewLine();
+#if 0
     gzflush(g_gzFile, Z_SYNC_FLUSH);
-    LeaveCriticalSection(&CriticalSection); 
+#endif
+    //LeaveCriticalSection(&CriticalSection); 
 }
 
 void BeginArg(const char *type, const char *name) {
