@@ -312,7 +312,6 @@ class DumpTraceParser(TraceParser):
     def handle_call(self, call):
         call.visit(self.pretty_printer)
         self.formatter.newline()
-        print call.attrs
 
 
 class StatsTraceParser(TraceParser):
