@@ -355,7 +355,9 @@ class Tracer:
                 self.unwrap_arg(function, arg)
                 self.dump_arg(function, arg)
         print '    Trace::EndEnter();'
+        self.pre_call_hook(function)
         print '    %s%s(%s);' % (result, pvalue, ', '.join([str(arg.name) for arg in function.args]))
+        self.post_call_hook(function)
         print '    Trace::BeginLeave(__call);'
         for arg in function.args:
             if arg.output:
@@ -369,6 +371,12 @@ class Tracer:
             print '    return __result;'
         print '}'
         print
+
+    def pre_call_hook(self, function):
+        pass
+
+    def post_call_hook(self, function):
+        pass
 
     def dump_arg(self, function, arg):
         print '    Trace::BeginArg(%u);' % (arg.index,)
