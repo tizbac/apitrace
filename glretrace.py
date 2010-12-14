@@ -131,7 +131,6 @@ class GlRetracer(Retracer):
     def extract_arg(self, function, arg, arg_type, lvalue, rvalue):
         if (function.name in self.pointer_function_names and arg.name == 'pointer' or
             function.name in self.draw_elements_function_names and arg.name == 'indices'):
-            self.extract_pointer(function, arg, arg_type, lvalue, rvalue)
             print '    if (dynamic_cast<Trace::Null *>(&%s)) {' % rvalue
             print '        %s = 0;' % (lvalue)
             print '    } else {'
@@ -163,7 +162,13 @@ bool __reshape_window = false;
 
 unsigned __frame = 0;
 long long __startTime = 0;
-bool __screenshots = 0;
+static enum {
+    MODE_DISPLAY = 0,
+    MODE_SNAPSHOT,
+    MODE_COMPARE,
+} __mode = MODE_DISPLAY;
+
+const char *__snapshot_prefix = "";
 
 
 static void
@@ -225,12 +230,34 @@ static void display_noop(void) {
 static void frame_complete(void) {
     ++__frame;
     
-    if (__screenshots && !__reshape_window) {
+    if (!__reshape_window && (__mode == MODE_SNAPSHOT || __mode == MODE_COMPARE)) {
         char filename[PATH_MAX];
-        snprintf(filename, sizeof filename, "screenshot_%04u.png", __frame);
-        Image::Image image(__window_width, __window_height, true);
-        glReadPixels(0, 0, __window_width, __window_height, GL_RGBA, GL_UNSIGNED_BYTE, image.pixels);
-        image.writePNG(filename);
+
+        snprintf(filename, sizeof filename, "%s%04u.png", __snapshot_prefix, __frame);
+        
+        Image::Image *ref = NULL;
+        if (__mode == MODE_COMPARE) {
+            ref = Image::readPNG(filename);
+            if (!ref) {
+                return;
+            }
+            if (verbosity)
+                std::cout << "Read " << filename << "\n";
+        }
+        
+        Image::Image src(__window_width, __window_height, true);
+        glReadPixels(0, 0, __window_width, __window_height, GL_RGBA, GL_UNSIGNED_BYTE, src.pixels);
+
+        if (__mode == MODE_SNAPSHOT) {
+            if (src.writePNG(filename) && verbosity) {
+                std::cout << "Wrote " << filename << "\n";
+            }
+        }
+
+        if (__mode == MODE_COMPARE) {
+            std::cout << "Frame " << __frame << " average precision of " << src.compare(*ref) << " bits\n";
+            delete ref;
+        }
     }
 
 }
@@ -239,24 +266,32 @@ static void display(void) {
     Trace::Call *call;
 
     while ((call = parser.parse_call())) {
-        if (call->name() == "glFlush") {
-            glFlush();
-            if (!double_buffer) {
-                frame_complete();
-            }
-        }
-        
-        if (!retrace_call(*call)) {
-            if (call->name() == "glXSwapBuffers" ||
-                call->name() == "wglSwapBuffers") {
+        const std::string &name = call->name();
+
+        if ((name[0] == 'w' && name[1] == 'g' && name[2] == 'l') ||
+            (name[0] == 'g' && name[1] == 'l' && name[2] == 'X')) {
+            // XXX: We ignore the majority of the OS-specific calls for now
+            if (name == "glXSwapBuffers" ||
+                name == "wglSwapBuffers") {
                 if (double_buffer)
                     glutSwapBuffers();
                 else
                     glFlush();
                 frame_complete();
                 return;
+            } else {
+                continue;
             }
         }
+
+        if (name == "glFlush") {
+            glFlush();
+            if (!double_buffer) {
+                frame_complete();
+            }
+        }
+        
+        retrace_call(*call);
     }
 
     // Reached the end of trace
@@ -270,8 +305,12 @@ static void display(void) {
         " in " <<  timeInterval << " secs,"
         " average of " << (__frame/timeInterval) << " fps\n";
 
-    glutDisplayFunc(&display_noop);
-    glutIdleFunc(NULL);
+    if (__mode == MODE_DISPLAY) {
+        glutDisplayFunc(&display_noop);
+        glutIdleFunc(NULL);
+    } else {
+        exit(0);
+    }
 }
 
 static void idle(void) {
@@ -281,6 +320,18 @@ static void idle(void) {
         __reshape_window = false;
     }
     glutPostRedisplay();
+}
+
+static void usage(void) {
+    std::cout << 
+        "Usage: glretrace [OPTION] TRACE\n"
+        "Replay TRACE.\n"
+        "\n"
+        "  -c           compare against snapshots\n"
+        "  -db          use a double buffer visual\n"
+        "  -p PREFIX    snapshot prefix\n"
+        "  -s           take snapshots\n"
+        "  -v           verbose output\n";
 }
 
 int main(int argc, char **argv)
@@ -296,14 +347,22 @@ int main(int argc, char **argv)
 
         if (!strcmp(arg, "--")) {
             break;
+        } else if (!strcmp(arg, "-c")) {
+            __mode = MODE_COMPARE;
         } else if (!strcmp(arg, "-db")) {
             double_buffer = true;
+        } else if (!strcmp(arg, "--help")) {
+            usage();
+            return 0;
+        } else if (!strcmp(arg, "-p")) {
+            __snapshot_prefix = argv[++i];
         } else if (!strcmp(arg, "-s")) {
-            __screenshots = true;
+            __mode = MODE_SNAPSHOT;
         } else if (!strcmp(arg, "-v")) {
             ++verbosity;
         } else {
             std::cerr << "error: unknown option " << arg << "\n";
+            usage();
             return 1;
         }
     }
