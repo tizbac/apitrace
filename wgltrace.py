@@ -123,28 +123,32 @@ class WglTracer(GlTracer):
         GlTracer.dispatch_function(self, function)
 
         if function.name == 'glGetString':
-            print '    switch (name) {'
-            print '    case GL_VENDOR:'
-            print '        __result = (const GLubyte*)"VMware, Inc.";'
-            print '        break;'
-            print '    case GL_VERSION:'
-            print '        __result = (const GLubyte*)"2.1";'
-            print '        break;'
-            print '    case GL_SHADING_LANGUAGE_VERSION:'
-            print '        __result = (const GLubyte*)"1.2";'
-            print '        break;'
-            print '    case GL_EXTENSIONS:'
-            print '        __result = (const GLubyte*)"%s";' % ' '.join(self.extensions)
-            print '        break;'
-            print '    default:'
-            print '        break;'
+            print '    if (__result) {'
+            print '        switch (name) {'
+            print '        case GL_VENDOR:'
+            print '            __result = (const GLubyte*)"VMware, Inc.";'
+            print '            break;'
+            print '        case GL_VERSION:'
+            print '            __result = (const GLubyte*)"2.1";'
+            print '            break;'
+            print '        case GL_SHADING_LANGUAGE_VERSION:'
+            print '            __result = (const GLubyte*)"1.2";'
+            print '            break;'
+            print '        case GL_EXTENSIONS:'
+            print '            __result = (const GLubyte*)"%s";' % ' '.join(self.extensions)
+            print '            break;'
+            print '        default:'
+            print '            break;'
+            print '        }'
             print '    }'
 
         if function.name == 'wglGetExtensionsStringARB':
-            print '    return "%s";' % ' '.join(self.wgl_extensions)
+            print '    if (__result) {'
+            print '        __result = "%s";' % ' '.join(self.wgl_extensions)
+            print '    }'
 
     def wrap_ret(self, function, instance):
-        if function.name == "wglGetProcAddress":
+        if function.name == 'wglGetProcAddress':
             print '    if (%s) {' % instance
         
             func_dict = dict([(f.name, f) for f in glapi.functions + wglapi.functions])
