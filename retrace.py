@@ -174,6 +174,11 @@ class Retracer:
 
     def retrace_function(self, function):
         print 'static void retrace_%s(Trace::Call &call) {' % function.name
+        self.retrace_function_body(function)
+        print '}'
+        print
+
+    def retrace_function_body(self, function):
         success = True
         for arg in function.args:
             arg_type = ConstRemover().visit(arg.type)
@@ -205,11 +210,10 @@ class Retracer:
                 ValueWrapper().visit(function.type, lvalue, rvalue)
             except NotImplementedError:
                 print '   // FIXME: result'
-        print '}'
-        print
 
     def fail_function(self, function):
-        print '    std::cerr << "warning: unsupported call %s\\n";' % function.name
+        print '    if (verbosity >= 0)'
+        print '        std::cerr << "warning: unsupported call %s\\n";' % function.name
         print '    return;'
 
     def extract_arg(self, function, arg, arg_type, lvalue, rvalue):
@@ -236,7 +240,7 @@ class Retracer:
         print 'static bool retrace_call(Trace::Call &call) {'
         print '    const char *name = call.name().c_str();'
         print
-        print '    if (verbosity >=1 ) {'
+        print '    if (verbosity >= 1) {'
         print '        std::cout << call;'
         print '        std::cout.flush();'
         print '    };'
@@ -252,7 +256,8 @@ class Retracer:
     
         string_switch('name', func_dict.keys(), handle_case)
 
-        print '    std::cerr << "warning: unknown call " << call.name() << "\\n";'
+        print '    if (verbosity >= 0)'
+        print '        std::cerr << "warning: unknown call " << call.name() << "\\n";'
         print '    return false;'
         print '}'
         print
@@ -276,7 +281,7 @@ class Retracer:
                 handle_names.add(handle.name)
         print
 
-        print 'unsigned verbosity = 0;'
+        print 'int verbosity = 0;'
         print
 
         self.retrace_functions(api.functions)
