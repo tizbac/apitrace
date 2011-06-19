@@ -49,7 +49,6 @@ class Dispatcher:
         #
         #  static __PROC __getPublicProcAddress(const char *name);
         #  static __PROC __getPrivateProcAddress(const char *name);
-        #  static void __abort(void);
         #
         raise NotImplementedError
 
@@ -62,7 +61,9 @@ class Dispatcher:
         # functions
         print '#ifdef RETRACE'
         for function in api.functions:
-            if not self.is_public_function(function):
+            if self.is_public_function(function):
+                print '#define __%s %s' % (function.name, function.name)
+            else:
                 print '#define %s __%s' % (function.name, function.name)
         print '#endif /* RETRACE */'
         print
@@ -77,6 +78,7 @@ class Dispatcher:
         print 'static %s %s = NULL;' % (ptype, pvalue)
         print
         print 'static inline ' + function.prototype('__' + function.name) + ' {'
+        print '    const char *__name = "%s";' % function.name
         if function.type is stdapi.Void:
             ret = ''
         else:
@@ -100,22 +102,23 @@ class Dispatcher:
         else:
             get_proc_address = '__getPrivateProcAddress'
         print '    if (!%s) {' % (pvalue,)
-        print '        %s = (%s)%s("%s");' % (pvalue, ptype, get_proc_address, function.name)
+        print '        %s = (%s)%s(__name);' % (pvalue, ptype, get_proc_address)
         print '        if (!%s) {' % (pvalue,)
         self.fail_function(function)
         print '        }'
         print '    }'
 
     def fail_function(self, function):
-        print '            OS::DebugMessage("error: unavailable function \\"%s\\"\\n");' % function.name
-        if function.fail is not None:
+        if function.type is stdapi.Void or function.fail is not None:
+            print r'            OS::DebugMessage("warning: ignoring call to unavailable function %s\n", __name);'
             if function.type is stdapi.Void:
-                assert function.fail == ''
+                assert function.fail is None
                 print '            return;' 
             else:
-                assert function.fail != ''
+                assert function.fail is not None
                 print '            return %s;' % function.fail
         else:
-            print '            __abort();'
+            print r'            OS::DebugMessage("error: unavailable function %s\n", __name);'
+            print r'            OS::Abort();'
 
 

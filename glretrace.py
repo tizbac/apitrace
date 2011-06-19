@@ -49,19 +49,22 @@ class GlRetracer(Retracer):
 
         "glInterleavedArrays",
 
-        #"glVertexPointerEXT",
-        #"glNormalPointerEXT",
-        #"glColorPointerEXT",
-        #"glIndexPointerEXT",
-        #"glTexCoordPointerEXT",
-        #"glEdgeFlagPointerEXT",
-        #"glFogCoordPointerEXT",
-        #"glSecondaryColorPointerEXT",
+        "glVertexPointerEXT",
+        "glNormalPointerEXT",
+        "glColorPointerEXT",
+        "glIndexPointerEXT",
+        "glTexCoordPointerEXT",
+        "glEdgeFlagPointerEXT",
+        "glFogCoordPointerEXT",
+        "glSecondaryColorPointerEXT",
 
-        #"glVertexAttribPointer",
-        #"glVertexAttribPointerARB",
-        #"glVertexAttribPointerNV",
-        #"glVertexAttribLPointer",
+        "glVertexAttribPointer",
+        "glVertexAttribPointerARB",
+        "glVertexAttribPointerNV",
+        "glVertexAttribIPointer",
+        "glVertexAttribIPointerEXT",
+        "glVertexAttribLPointer",
+        "glVertexAttribLPointerEXT",
         
         #"glMatrixIndexPointerARB",
     ))
@@ -90,19 +93,61 @@ class GlRetracer(Retracer):
         "glDrawRangeElements",
         "glDrawRangeElementsBaseVertex",
         "glDrawRangeElementsEXT",
-        #"glMultiDrawElements",
-        #"glMultiDrawElementsBaseVertex",
-        #"glMultiDrawElementsEXT",
-        #"glMultiModeDrawElementsIBM",
+        "glMultiDrawElements",
+        "glMultiDrawElementsBaseVertex",
+        "glMultiDrawElementsEXT",
+        "glMultiModeDrawElementsIBM",
+    ])
+
+    misc_draw_function_names = set([
+        "glClear",
+        "glEnd",
+        "glDrawPixels",
+        "glBlitFramebuffer",
+        "glBlitFramebufferEXT",
+    ])
+
+    bind_framebuffer_function_names = set([
+        "glBindFramebuffer",
+        "glBindFramebufferARB",
+        "glBindFramebufferEXT",
+    ])
+
+    # Names of the functions that can pack into the current pixel buffer
+    # object.  See also the ARB_pixel_buffer_object specification.
+    pack_function_names = set([
+        'glGetCompressedTexImage',
+        'glGetConvolutionFilter',
+        'glGetHistogram',
+        'glGetMinmax',
+        'glGetPixelMapfv',
+        'glGetPixelMapuiv',
+        'glGetPixelMapusv',
+        'glGetPolygonStipple',
+        'glGetSeparableFilter,',
+        'glGetTexImage',
+        'glReadPixels',
+        'glGetnCompressedTexImageARB',
+        'glGetnConvolutionFilterARB',
+        'glGetnHistogramARB',
+        'glGetnMinmaxARB',
+        'glGetnPixelMapfvARB',
+        'glGetnPixelMapuivARB',
+        'glGetnPixelMapusvARB',
+        'glGetnPolygonStippleARB',
+        'glGetnSeparableFilterARB',
+        'glGetnTexImageARB',
+        'glReadnPixelsARB',
     ])
 
     def retrace_function_body(self, function):
         is_array_pointer = function.name in self.array_pointer_function_names
         is_draw_array = function.name in self.draw_array_function_names
         is_draw_elements = function.name in self.draw_elements_function_names
+        is_misc_draw = function.name in self.misc_draw_function_names
 
         if is_array_pointer or is_draw_array or is_draw_elements:
-            print '    if (Trace::Parser::version < 1) {'
+            print '    if (glretrace::parser.version < 1) {'
 
             if is_array_pointer or is_draw_array:
                 print '        GLint __array_buffer = 0;'
@@ -120,331 +165,187 @@ class GlRetracer(Retracer):
             
             print '    }'
 
+        # When no pack buffer object is bound, the pack functions are no-ops.
+        if function.name in self.pack_function_names:
+            print '    GLint __pack_buffer = 0;'
+            print '    glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &__pack_buffer);'
+            print '    if (!__pack_buffer) {'
+            print '        return;'
+            print '    }'
+
+        # Pre-snapshots
+        if function.name in self.bind_framebuffer_function_names:
+            print '    if (glretrace::snapshot_frequency == glretrace::FREQUENCY_FRAMEBUFFER) {'
+            print '        glretrace::snapshot(call.no - 1);'
+            print '    }'
+
         Retracer.retrace_function_body(self, function)
+
+        # Post-snapshots
+        if function.name in ('glFlush', 'glFinish'):
+            print '    if (!glretrace::double_buffer) {'
+            print '        glretrace::frame_complete(call.no);'
+            print '    }'
+        if function.name == 'glReadPixels':
+            print '    glFinish();'
+            print '    if (glretrace::snapshot_frequency == glretrace::FREQUENCY_FRAME ||'
+            print '        glretrace::snapshot_frequency == glretrace::FREQUENCY_FRAMEBUFFER) {'
+            print '        glretrace::snapshot(call.no);'
+            print '    }'
+        if is_draw_array or is_draw_elements or is_misc_draw:
+            print '    if (glretrace::snapshot_frequency == glretrace::FREQUENCY_DRAW) {'
+            print '        glretrace::snapshot(call.no);'
+            print '    }'
+
 
     def call_function(self, function):
         if function.name == "glViewport":
-            print '    if (x + width > __window_width) {'
-            print '        __window_width = x + width;'
-            print '        __reshape_window = true;'
-            print '    }'
-            print '    if (y + height > __window_height) {'
-            print '        __window_height = y + height;'
-            print '        __reshape_window = true;'
+            print '    GLint draw_framebuffer = 0;'
+            print '    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &draw_framebuffer);'
+            print '    if (draw_framebuffer == 0) {'
+            print '        if (glretrace::drawable) {'
+            print '            int drawable_width  = x + width;'
+            print '            int drawable_height = y + height;'
+            print '            if (drawable_width  > (int)glretrace::drawable->width ||'
+            print '                drawable_height > (int)glretrace::drawable->height) {'
+            print '                glretrace::drawable->resize(drawable_width, drawable_height);'
+            print '                if (!glretrace::drawable->visible) {'
+            print '                    glretrace::drawable->show();'
+            print '                }'
+            print '                glScissor(0, 0, drawable_width, drawable_height);'
+            print '            }'
+            print '        }'
             print '    }'
 
         if function.name == "glEnd":
-            print '    insideGlBeginEnd = false;'
+            print '    glretrace::insideGlBeginEnd = false;'
+
+        if function.name == 'memcpy':
+            print '    if (!dest || !src || !n) return;'
         
         Retracer.call_function(self, function)
 
+        # Error checking
         if function.name == "glBegin":
-            print '    insideGlBeginEnd = true;'
-        else:
+            print '    glretrace::insideGlBeginEnd = true;'
+        elif function.name.startswith('gl'):
             # glGetError is not allowed inside glBegin/glEnd
-            print '    checkGlError();'
-
-    pointer_function_names = set([
-        "glColorPointer",
-        #"glColorPointerEXT",
-        "glEdgeFlagPointer",
-        #"glEdgeFlagPointerEXT",
-        "glFogCoordPointer",
-        #"glFogCoordPointerEXT",
-        "glIndexPointer",
-        #"glIndexPointerEXT",
-        #"glMatrixIndexPointerARB",
-        "glNormalPointer",
-        #"glNormalPointerEXT",
-        "glSecondaryColorPointer",
-        #"glSecondaryColorPointerEXT",
-        "glTexCoordPointer",
-        #"glTexCoordPointerEXT",
-        #"glVertexAttribLPointer",
-        #"glVertexAttribPointer",
-        #"glVertexAttribPointerARB",
-        #"glVertexAttribPointerNV",
-        "glVertexPointer",
-        #"glVertexPointerEXT",
-    ])
+            print '    if (!glretrace::benchmark && !glretrace::insideGlBeginEnd) {'
+            print '        glretrace::checkGlError(call);'
+            if function.name in ('glProgramStringARB', 'glProgramStringNV'):
+                print r'        GLint error_position = -1;'
+                print r'        glGetIntegerv(GL_PROGRAM_ERROR_POSITION_ARB, &error_position);'
+                print r'        if (error_position != -1) {'
+                print r'            const char *error_string = (const char *)glGetString(GL_PROGRAM_ERROR_STRING_ARB);'
+                print r'            std::cerr << call.no << ": warning: " << error_string << "\n";'
+                print r'        }'
+            if function.name == 'glCompileShader':
+                print r'        GLint compile_status = 0;'
+                print r'        glGetShaderiv(shader, GL_COMPILE_STATUS, &compile_status);'
+                print r'        if (!compile_status) {'
+                print r'             GLint info_log_length = 0;'
+                print r'             glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &info_log_length);'
+                print r'             GLchar *infoLog = new GLchar[info_log_length];'
+                print r'             glGetShaderInfoLog(shader, info_log_length, NULL, infoLog);'
+                print r'             std::cerr << call.no << ": warning: " << infoLog << "\n";'
+                print r'             delete [] infoLog;'
+                print r'        }'
+            if function.name == 'glLinkProgram':
+                print r'        GLint link_status = 0;'
+                print r'        glGetProgramiv(program, GL_LINK_STATUS, &link_status);'
+                print r'        if (!link_status) {'
+                print r'             GLint info_log_length = 0;'
+                print r'             glGetProgramiv(program, GL_INFO_LOG_LENGTH, &info_log_length);'
+                print r'             GLchar *infoLog = new GLchar[info_log_length];'
+                print r'             glGetProgramInfoLog(program, info_log_length, NULL, infoLog);'
+                print r'             std::cerr << call.no << ": warning: " << infoLog << "\n";'
+                print r'             delete [] infoLog;'
+                print r'        }'
+            if function.name == 'glCompileShaderARB':
+                print r'        GLint compile_status = 0;'
+                print r'        glGetObjectParameterivARB(shaderObj, GL_OBJECT_COMPILE_STATUS_ARB, &compile_status);'
+                print r'        if (!compile_status) {'
+                print r'             GLint info_log_length = 0;'
+                print r'             glGetObjectParameterivARB(shaderObj, GL_OBJECT_INFO_LOG_LENGTH_ARB, &info_log_length);'
+                print r'             GLchar *infoLog = new GLchar[info_log_length];'
+                print r'             glGetInfoLogARB(shaderObj, info_log_length, NULL, infoLog);'
+                print r'             std::cerr << call.no << ": warning: " << infoLog << "\n";'
+                print r'             delete [] infoLog;'
+                print r'        }'
+            if function.name == 'glLinkProgramARB':
+                print r'        GLint link_status = 0;'
+                print r'        glGetObjectParameterivARB(programObj, GL_OBJECT_LINK_STATUS_ARB, &link_status);'
+                print r'        if (!link_status) {'
+                print r'             GLint info_log_length = 0;'
+                print r'             glGetObjectParameterivARB(programObj, GL_OBJECT_INFO_LOG_LENGTH_ARB, &info_log_length);'
+                print r'             GLchar *infoLog = new GLchar[info_log_length];'
+                print r'             glGetInfoLogARB(programObj, info_log_length, NULL, infoLog);'
+                print r'             std::cerr << call.no << ": warning: " << infoLog << "\n";'
+                print r'             delete [] infoLog;'
+                print r'        }'
+            if function.name in ('glMapBuffer', 'glMapBufferARB', 'glMapBufferRange', 'glMapNamedBufferEXT', 'glMapNamedBufferRangeEXT'):
+                print r'        if (!__result) {'
+                print r'             std::cerr << call.no << ": warning: failed to map buffer\n";'
+                print r'        }'
+            if function.name in ('glGetAttribLocation', 'glGetAttribLocationARB'):
+                print r'    GLint __orig_result = call.ret->toSInt();'
+                print r'    if (__result != __orig_result) {'
+                print r'        std::cerr << call.no << ": warning vertex attrib location mismatch " << __orig_result << " -> " << __result << "\n";'
+                print r'    }'
+            if function.name in ('glCheckFramebufferStatus', 'glCheckFramebufferStatusEXT', 'glCheckNamedFramebufferStatusEXT'):
+                print r'    GLint __orig_result = call.ret->toSInt();'
+                print r'    if (__orig_result == GL_FRAMEBUFFER_COMPLETE &&'
+                print r'        __result != GL_FRAMEBUFFER_COMPLETE) {'
+                print r'        std::cerr << call.no << ": incomplete framebuffer (" << __result << ")\n";'
+                print r'    }'
+            print '    }'
 
     def extract_arg(self, function, arg, arg_type, lvalue, rvalue):
-        if function.name in self.pointer_function_names and arg.name == 'pointer':
-            print '    %s = %s.blob();' % (lvalue, rvalue)
+        if function.name in self.array_pointer_function_names and arg.name == 'pointer':
+            print '    %s = static_cast<%s>(%s.toPointer());' % (lvalue, arg_type, rvalue)
             return
 
         if function.name in self.draw_elements_function_names and arg.name == 'indices':
-            print '    %s = %s.blob();' % (lvalue, rvalue)
+            self.extract_opaque_arg(function, arg, arg_type, lvalue, rvalue)
             return
 
-        if function.name.startswith('glUniform') and function.args[0].name == arg.name == 'location':
+        # Handle pointer with offsets into the current pack pixel buffer
+        # object.
+        if function.name in self.pack_function_names and arg.output:
+            self.extract_opaque_arg(function, arg, arg_type, lvalue, rvalue)
+            return
+
+        if arg.type is glapi.GLlocation \
+           and 'program' not in [arg.name for arg in function.args]:
             print '    GLint program = -1;'
             print '    glGetIntegerv(GL_CURRENT_PROGRAM, &program);'
+        
+        if arg.type is glapi.GLlocationARB \
+           and 'programObj' not in [arg.name for arg in function.args]:
+            print '    GLhandleARB programObj = glGetHandleARB(GL_PROGRAM_OBJECT_ARB);'
 
         Retracer.extract_arg(self, function, arg, arg_type, lvalue, rvalue)
+
+        # Don't try to use more samples than the implementation supports
+        if arg.name == 'samples':
+            assert arg.type is glapi.GLsizei
+            print '    GLint max_samples = 0;'
+            print '    glGetIntegerv(GL_MAX_SAMPLES, &max_samples);'
+            print '    if (samples > max_samples) {'
+            print '        samples = max_samples;'
+            print '    }'
 
 
 if __name__ == '__main__':
     print r'''
 #include <string.h>
-#include <stdio.h>
-#include <iostream>
-
-#define RETRACE
 
 #include "glproc.hpp"
-#include <GL/glut.h>
-
-static bool double_buffer = false;
-static bool insideGlBeginEnd = false;
-
-static int __window_width = 256, __window_height = 256;
-bool __reshape_window = false;
-
-unsigned __frame = 0;
-long long __startTime = 0;
-bool __wait = false;
-
-bool __benchmark = false;
-const char *__compare_prefix = NULL;
-const char *__snapshot_prefix = NULL;
+#include "glretrace.hpp"
 
 
-static void
-checkGlError(void) {
-    if (__benchmark || insideGlBeginEnd) {
-        return;
-    }
-
-    GLenum error = glGetError();
-    if (error == GL_NO_ERROR) {
-        return;
-    }
-
-    std::cerr << "warning: glGetError() = ";
-    switch (error) {
-    case GL_INVALID_ENUM:
-        std::cerr << "GL_INVALID_ENUM";
-        break;
-    case GL_INVALID_VALUE:
-        std::cerr << "GL_INVALID_VALUE";
-        break;
-    case GL_INVALID_OPERATION:
-        std::cerr << "GL_INVALID_OPERATION";
-        break;
-    case GL_STACK_OVERFLOW:
-        std::cerr << "GL_STACK_OVERFLOW";
-        break;
-    case GL_STACK_UNDERFLOW:
-        std::cerr << "GL_STACK_UNDERFLOW";
-        break;
-    case GL_OUT_OF_MEMORY:
-        std::cerr << "GL_OUT_OF_MEMORY";
-        break;
-    case GL_INVALID_FRAMEBUFFER_OPERATION:
-        std::cerr << "GL_INVALID_FRAMEBUFFER_OPERATION";
-        break;
-    case GL_TABLE_TOO_LARGE:
-        std::cerr << "GL_TABLE_TOO_LARGE";
-        break;
-    default:
-        std::cerr << error;
-        break;
-    }
-    std::cerr << "\n";
-}
 '''
     api = glapi.glapi
+    api.add_function(glapi.memcpy)
     retracer = GlRetracer()
-    retracer.retrace_api(glapi.glapi)
-    print r'''
-
-static Trace::Parser parser;
-
-static void display_noop(void) {
-}
-
-#include "image.hpp"
-
-static void snapshot(Image::Image &image) {
-    GLint drawbuffer = double_buffer ? GL_BACK : GL_FRONT;
-    GLint readbuffer = double_buffer ? GL_BACK : GL_FRONT;
-    glGetIntegerv(GL_READ_BUFFER, &drawbuffer);
-    glGetIntegerv(GL_READ_BUFFER, &readbuffer);
-    glReadBuffer(drawbuffer);
-    glReadPixels(0, 0, image.width, image.height, GL_RGBA, GL_UNSIGNED_BYTE, image.pixels);
-    checkGlError();
-    glReadBuffer(readbuffer);
-}
-
-static void frame_complete(void) {
-    ++__frame;
-    
-    if (!__reshape_window && (__snapshot_prefix || __compare_prefix)) {
-        Image::Image *ref = NULL;
-        if (__compare_prefix) {
-            char filename[PATH_MAX];
-            snprintf(filename, sizeof filename, "%s%04u.png", __compare_prefix, __frame);
-            ref = Image::readPNG(filename);
-            if (!ref) {
-                return;
-            }
-            if (verbosity >= 0)
-                std::cout << "Read " << filename << "\n";
-        }
-        
-        Image::Image src(__window_width, __window_height, true);
-        snapshot(src);
-
-        if (__snapshot_prefix) {
-            char filename[PATH_MAX];
-            snprintf(filename, sizeof filename, "%s%04u.png", __snapshot_prefix, __frame);
-            if (src.writePNG(filename) && verbosity >= 0) {
-                std::cout << "Wrote " << filename << "\n";
-            }
-        }
-
-        if (ref) {
-            std::cout << "Frame " << __frame << " average precision of " << src.compare(*ref) << " bits\n";
-            delete ref;
-        }
-    }
-
-}
-
-static void display(void) {
-    Trace::Call *call;
-
-    while ((call = parser.parse_call())) {
-        const std::string &name = call->name();
-
-        if ((name[0] == 'w' && name[1] == 'g' && name[2] == 'l') ||
-            (name[0] == 'g' && name[1] == 'l' && name[2] == 'X')) {
-            // XXX: We ignore the majority of the OS-specific calls for now
-            if (name == "glXSwapBuffers" ||
-                name == "wglSwapBuffers") {
-                frame_complete();
-                if (double_buffer)
-                    glutSwapBuffers();
-                else
-                    glFlush();
-                return;
-            } else {
-                continue;
-            }
-        }
-
-        if (name == "glFlush") {
-            if (!double_buffer) {
-                frame_complete();
-            }
-            glFlush();
-        }
-        
-        retrace_call(*call);
-
-        delete call;
-    }
-
-    // Reached the end of trace
-    glFlush();
-
-    long long endTime = OS::GetTime();
-    float timeInterval = (endTime - __startTime) * 1.0E-6;
-
-    std::cout << 
-        "Rendered " << __frame << " frames"
-        " in " <<  timeInterval << " secs,"
-        " average of " << (__frame/timeInterval) << " fps\n";
-
-    if (__wait) {
-        glutDisplayFunc(&display_noop);
-        glutIdleFunc(NULL);
-    } else {
-        exit(0);
-    }
-}
-
-static void idle(void) {
-    if (__reshape_window) {
-        // XXX: doesn't quite work
-        glutReshapeWindow(__window_width, __window_height);
-        __reshape_window = false;
-    }
-    glutPostRedisplay();
-}
-
-static void usage(void) {
-    std::cout << 
-        "Usage: glretrace [OPTION] TRACE\n"
-        "Replay TRACE.\n"
-        "\n"
-        "  -b           benchmark (no glgeterror; no messages)\n"
-        "  -c PREFIX    compare against snapshots\n"
-        "  -db          use a double buffer visual\n"
-        "  -s PREFIX    take snapshots\n"
-        "  -v           verbose output\n"
-        "  -w           wait on final frame\n";
-}
-
-int main(int argc, char **argv)
-{
-
-    int i;
-    for (i = 1; i < argc; ++i) {
-        const char *arg = argv[i];
-
-        if (arg[0] != '-') {
-            break;
-        }
-
-        if (!strcmp(arg, "--")) {
-            break;
-        } else if (!strcmp(arg, "-b")) {
-            __benchmark = true;
-            --verbosity;
-        } else if (!strcmp(arg, "-c")) {
-            __compare_prefix = argv[++i];
-        } else if (!strcmp(arg, "-db")) {
-            double_buffer = true;
-        } else if (!strcmp(arg, "--help")) {
-            usage();
-            return 0;
-        } else if (!strcmp(arg, "-s")) {
-            __snapshot_prefix = argv[++i];
-        } else if (!strcmp(arg, "-v")) {
-            ++verbosity;
-        } else if (!strcmp(arg, "-w")) {
-            __wait = true;
-        } else {
-            std::cerr << "error: unknown option " << arg << "\n";
-            usage();
-            return 1;
-        }
-    }
-
-    glutInit(&argc, argv);
-    glutInitWindowPosition(0, 0);
-    glutInitWindowSize(__window_width, __window_height);
-    glutInitDisplayMode(GLUT_DEPTH | GLUT_RGB | (double_buffer ? GLUT_DOUBLE : GLUT_SINGLE));
-    glutCreateWindow(argv[0]);
-
-    glutDisplayFunc(&display);
-    glutIdleFunc(&idle);
-
-    for (GLuint h = 0; h < 1024; ++h) {
-        __list_map[h] = h;
-    }
-
-    for ( ; i < argc; ++i) {
-        if (parser.open(argv[i])) {
-            __startTime = OS::GetTime();
-            glutMainLoop();
-            parser.close();
-        }
-    }
-
-    return 0;
-}
-
-'''    
+    retracer.retrace_api(api)

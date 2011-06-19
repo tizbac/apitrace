@@ -30,31 +30,45 @@
 #ifndef _GLIMPORTS_HPP_
 #define _GLIMPORTS_HPP_
 
-#ifdef WIN32
+
+// Prevent including system's glext.h
+#define __glext_h_
+
+
+#if defined(_WIN32)
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN 1
 #endif
 
 #include <windows.h>
-
-#else /* !WIN32 */
-
-#include <X11/Xlib.h>
-
-#endif /* !WIN32 */
-
 #include <GL/gl.h>
 
-#include <GL/glext.h>
+#elif defined(__APPLE__)
+
+#include <OpenGL/gl.h>
+
+#else
+
+#include <X11/Xlib.h>
+#include <GL/gl.h>
+
+#endif /* !_WIN32 */
+
+
+// Include our own glext.h
+#undef __glext_h_
+#include "glext/glext.h"
+
 
 #ifndef GL_TEXTURE_INDEX_SIZE_EXT
 #define GL_TEXTURE_INDEX_SIZE_EXT         0x80ED
 #endif
 
-#ifdef WIN32
 
-#include <GL/wglext.h>
+#if defined(_WIN32)
+
+#include "glext/wglext.h"
 
 #define GLAPIENTRY __stdcall
 
@@ -65,8 +79,9 @@
 #define PFD_SUPPORT_COMPOSITION 0x00008000
 #endif
 
-#ifdef __MINGW32__
+#ifndef WGL_SWAPMULTIPLE_MAX
 
+extern "C"
 typedef struct _WGLSWAP
 {
     HDC hdc;
@@ -75,13 +90,35 @@ typedef struct _WGLSWAP
 
 #define WGL_SWAPMULTIPLE_MAX 16
 
-#endif /* __MINGW32__ */
+#endif /* !WGL_SWAPMULTIPLE_MAX */
 
-#else /* !WIN32 */
+#elif defined(__APPLE__)
+
+#include <OpenGL/OpenGL.h>
+#include <OpenGL/CGLIOSurface.h>
+#include <OpenGL/CGLDevice.h>
+
+extern "C" {
+
+typedef int CGSConnectionID;
+typedef int CGSWindowID;
+typedef int CGSSurfaceID;
+
+CGLError CGLSetSurface(CGLContextObj ctx, CGSConnectionID cid, CGSWindowID wid, CGSSurfaceID sid);
+CGLError CGLGetSurface(CGLContextObj ctx, CGSConnectionID* cid, CGSWindowID* wid, CGSSurfaceID* sid);
+CGLError CGLUpdateContext(CGLContextObj ctx);
+
+}
+
+#else
 
 #include <GL/glx.h>
-#include <GL/glext.h>
+#include "glext/glxext.h"
 
-#endif /* !WIN32 */
+/* Prevent collision with Trace::Bool */
+#undef Bool
+
+#endif
+
 
 #endif /* _GLIMPORTS_HPP_ */

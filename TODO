@@ -2,18 +2,9 @@
                             (in no particular order)
 
 
-* Determine blob sizes passed to glXxxPointer functions.
-
-  Potentially using tricks such as:
-  * http://fixunix.com/linux/337646-isbadreadptr-linux.html
-  * http://www.gamedev.net/community/forums/topic.asp?topic_id=132787
-  * http://msdn.microsoft.com/en-us/library/aa366781(v=VS.85).aspx
-  * http://msdn.microsoft.com/en-us/library/aa366902(v=VS.85).aspx
-  * http://stackoverflow.com/questions/1281686/determine-size-of-dynamically-allocated-memory-in-c
+Tracing:
 
 * Allow clamping to a GL version or a number of extensions.
-
-* Match the traced visuals (which will imply abandoning GLUT)
 
 * Trace multiple threads
   * GetCurrentThreadId()
@@ -23,13 +14,62 @@
 
 * Trace TSCs
 
-* Retrace multiple threads (which will imply abandoning GLUT)
+* Trace window sizes somehow
+
+* Allow to distinguish between the calls really done by the program, vs the
+  fakes one necessary to retrace correctly.
+
+* Start tracing on demand (e.g., key-press, or by frame no), emitting calls
+  that recreate all current state.
+
+* Add option to include call stack frames in the trace
+
+* Call gzflush() only when there is a signal/exception, except of doing it on
+  every call.
+
+
+Retracing:
+
+* Use visuals that best match those used in the trace; specially auto
+  detect single/double buffer visuals.
+
+* Respect multiple context sharing of the traces.
+
+* Support multiple threads
 
 * Provide a readline-like interactive mode to gltrace
   * http://github.com/antirez/linenoise
     * https://github.com/antirez/linenoise/issues#issue/8
   * http://hg.youterm.com/radare/file/87579f8c5087/src/dietline.c 
 
-* Trace window sizes somehow
-
 * Plug memory leaks.
+
+* Allow to retrace with two libGL.so in parallel, and output differences in
+  rendered frames / draw calls.
+
+* D3D support.
+
+
+GUI:
+
+* Timeline view.
+
+* Visualize meshes in draw commands.
+
+
+Other:
+
+* Side-by-side trace diffing; either as a separate tool on or the GUI.
+
+* Side-by-side state diffing.
+
+* Ability to extract just a single frame from a trace, and all previous calls
+  that contributed to it:
+
+  * via a state tracker (i.e., knowledge of how calls affect the state);
+
+  * or by leveragine retrace, dumping the calls to emit all state at beginning
+    of the frame.
+
+
+See also FIXME, TODO, and XXX comments on the source code.

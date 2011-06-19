@@ -20,8 +20,6 @@
  * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
- * Copyright 2007-2009 VMware, Inc.
- * All rights reserved.
  *
  **************************************************************************/
 
@@ -30,6 +28,7 @@
  */
 
 #ifdef __MINGW32__
+
 #define __in /**/
 #define __out /**/
 #define __inout /**/
@@ -54,5 +53,5 @@
 
 #define UINT8 uint8_t
 
-#endif
+#endif /* __MINGW32__ */
 

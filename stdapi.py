@@ -126,12 +126,8 @@ def ConstPointer(type):
 
 class Enum(Type):
 
-    __vid = 0
-
     def __init__(self, name, values):
         Type.__init__(self, name)
-        self.vid = Enum.__vid
-        Enum.__vid += len(values)
         self.values = list(values)
     
     def visit(self, visitor, *args, **kwargs):
@@ -219,7 +215,7 @@ class Function:
 
     __id = 0
 
-    def __init__(self, type, name, args, call = '', fail = None, sideeffects=True, hidden=False):
+    def __init__(self, type, name, args, call = '', fail = None, sideeffects=True):
         self.id = Function.__id
         Function.__id += 1
 
@@ -229,8 +225,12 @@ class Function:
         self.args = []
         index = 0
         for arg in args:
-            if isinstance(arg, tuple):
-                arg_type, arg_name = arg
+            if not isinstance(arg, Arg):
+                if isinstance(arg, tuple):
+                    arg_type, arg_name = arg
+                else:
+                    arg_type = arg
+                    arg_name = "arg%u" % index
                 arg = Arg(arg_type, arg_name)
             arg.index = index
             index += 1
@@ -239,7 +239,6 @@ class Function:
         self.call = call
         self.fail = fail
         self.sideeffects = sideeffects
-        self.hidden = False
 
     def prototype(self, name=None):
         if name is not None:
@@ -411,7 +410,7 @@ class Rebuilder(Visitor):
         return Const(const.type)
 
     def visit_struct(self, struct):
-        members = [self.visit(member) for member in struct.members]
+        members = [(self.visit(type), name) for type, name in struct.members]
         return Struct(struct.name, members)
 
     def visit_array(self, array):
@@ -567,7 +566,7 @@ UInt = Literal("unsigned int", "UInt")
 ULong = Literal("unsigned long", "UInt")
 ULongLong = Literal("unsigned long long", "UInt")
 Float = Literal("float", "Float")
-Double = Literal("double", "Float")
+Double = Literal("double", "Double")
 SizeT = Literal("size_t", "UInt")
 WString = Literal("wchar_t *", "WString")
 

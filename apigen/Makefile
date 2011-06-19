@@ -2,7 +2,7 @@
 all: \
 	download \
 	glapi.py glxapi.py wglapi.py \
-	glsize.hpp
+    glparams.py wglenum.py
 
 download: \
 	enum.spec \
@@ -35,7 +35,17 @@ glxapi.py: glspec.py glx.tm glx.spec glxext.spec
 wglapi.py: glspec.py wgl.tm wgl.spec wglext.spec
 	python glspec.py wgl wgl.tm wgl.spec wglext.spec > $@
 
-glsize.hpp: glsize.py
-	python glsize.py > $@
+glparams.py: glparams.sed enum.spec sort.sh
+	sed -n -f glparams.sed enum.spec | ./sort.sh > $@
+
+wglenum.py: wglenum.sh wglenumext.spec
+	./wglenum.sh wglenumext.spec > $@
+
+clean:
+	rm -f \
+        glapi.py glxapi.py wglapi.py \
+        glparams.py wglenum.py
 
 .PRECIOUS: %.spec %.tm
+
+.PHONY: download clean

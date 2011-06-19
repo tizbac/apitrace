@@ -31,11 +31,9 @@
 #define _TRACE_MODEL_HPP_
 
 
-#include <cassert>
+#include <assert.h>
 
-#include <string>
 #include <map>
-#include <list>
 #include <vector>
 #include <iostream>
 
@@ -43,9 +41,46 @@
 namespace Trace {
 
 
+typedef unsigned Id;
+
+
+struct FunctionSig {
+    Id id;
+    const char *name;
+    unsigned num_args;
+    const char **arg_names;
+};
+
+
+struct StructSig {
+    Id id;
+    const char *name;
+    unsigned num_members;
+    const char **member_names;
+};
+
+
+struct EnumSig {
+    Id id;
+    const char *name;
+    signed long long value;
+};
+
+
+struct BitmaskFlag {
+    const char *name;
+    unsigned long long value;
+};
+
+
+struct BitmaskSig {
+    Id id;
+    unsigned num_flags;
+    const BitmaskFlag *flags;
+};
+
+
 class Visitor;
-class Dumper;
-class UInt;
 
 
 class Value
@@ -54,49 +89,15 @@ public:
     virtual ~Value() {}
     virtual void visit(Visitor &visitor) = 0;
 
-    operator bool (void) const;
-    operator signed long long (void) const;
-    operator unsigned long long (void) const;
-    operator double (void) const;
+    virtual bool toBool(void) const = 0;
+    virtual signed long long toSInt(void) const;
+    virtual unsigned long long toUInt(void) const;
+    virtual float toFloat(void) const;
+    virtual double toDouble(void) const;
 
-    void *blob(void) const;
-    const char *string(void) const;
-
-    inline operator signed char (void) const { 
-        return static_cast<signed long long>(*this);
-    }
-
-    inline operator unsigned char (void) const { 
-        return static_cast<signed long long>(*this);
-    }
-
-    inline operator signed short (void) const { 
-        return static_cast<signed long long>(*this);
-    }
-
-    inline operator unsigned short (void) const { 
-        return static_cast<unsigned long long>(*this);
-    }
-
-    inline operator signed (void) const { 
-        return static_cast<signed long long>(*this);
-    }
-
-    inline operator unsigned (void) const { 
-        return static_cast<unsigned long long>(*this);
-    }
-
-    inline operator signed long (void) const { 
-        return static_cast<signed long long>(*this);
-    }
-
-    inline operator unsigned long (void) const { 
-        return static_cast<unsigned long long>(*this);
-    }
-
-    inline operator float (void) const { 
-        return static_cast<double>(*this);
-    }
+    virtual void *toPointer(void) const;
+    virtual unsigned long long toUIntPtr(void) const;
+    virtual const char *toString(void) const;
 
     const Value & operator[](size_t index) const;
 };
@@ -105,17 +106,28 @@ public:
 class Null : public Value
 {
 public:
+    bool toBool(void) const;
+    signed long long toSInt(void) const;
+    unsigned long long toUInt(void) const;
+    virtual float toFloat(void) const;
+    virtual double toDouble(void) const;
+    void *toPointer(void) const;
+    unsigned long long toUIntPtr(void) const;
+    const char *toString(void) const;
     void visit(Visitor &visitor);
 };
 
-
-#undef Bool
 
 class Bool : public Value
 {
 public:
     Bool(bool _value) : value(_value) {}
 
+    bool toBool(void) const;
+    signed long long toSInt(void) const;
+    unsigned long long toUInt(void) const;
+    virtual float toFloat(void) const;
+    virtual double toDouble(void) const;
     void visit(Visitor &visitor);
 
     bool value;
@@ -127,6 +139,11 @@ class SInt : public Value
 public:
     SInt(signed long long _value) : value(_value) {}
 
+    bool toBool(void) const;
+    signed long long toSInt(void) const;
+    unsigned long long toUInt(void) const;
+    virtual float toFloat(void) const;
+    virtual double toDouble(void) const;
     void visit(Visitor &visitor);
 
     signed long long value;
@@ -138,6 +155,11 @@ class UInt : public Value
 public:
     UInt(unsigned long long _value) : value(_value) {}
 
+    bool toBool(void) const;
+    signed long long toSInt(void) const;
+    unsigned long long toUInt(void) const;
+    virtual float toFloat(void) const;
+    virtual double toDouble(void) const;
     void visit(Visitor &visitor);
 
     unsigned long long value;
@@ -149,6 +171,11 @@ class Float : public Value
 public:
     Float(double _value) : value(_value) {}
 
+    bool toBool(void) const;
+    signed long long toSInt(void) const;
+    unsigned long long toUInt(void) const;
+    virtual float toFloat(void) const;
+    virtual double toDouble(void) const;
     void visit(Visitor &visitor);
 
     double value;
@@ -158,55 +185,53 @@ public:
 class String : public Value
 {
 public:
-    String(std::string _value) : value(_value) {}
+    String(const char * _value) : value(_value) {}
 
+    bool toBool(void) const;
+    const char *toString(void) const;
     void visit(Visitor &visitor);
 
-    std::string value;
+    const char * value;
 };
 
 
 class Enum : public Value
 {
 public:
-    typedef std::pair<std::string, Value *> Signature;
+    Enum(const EnumSig *_sig) : sig(_sig) {}
 
-    Enum(const Signature *_sig) : sig(_sig) {}
-
+    bool toBool(void) const;
+    signed long long toSInt(void) const;
+    unsigned long long toUInt(void) const;
+    virtual float toFloat(void) const;
+    virtual double toDouble(void) const;
     void visit(Visitor &visitor);
 
-    const Signature *sig;
+    const EnumSig *sig;
 };
 
 
 class Bitmask : public UInt
 {
 public:
-    typedef std::pair<std::string, unsigned long long> Pair;
-    typedef std::vector<Pair> Signature;
-
-    Bitmask(const Signature *_sig, unsigned long long _value) : UInt(_value), sig(_sig) {}
+    Bitmask(const BitmaskSig *_sig, unsigned long long _value) : UInt(_value), sig(_sig) {}
 
     void visit(Visitor &visitor);
 
-    const Signature *sig;
+    const BitmaskSig *sig;
 };
 
 
 class Struct : public Value
 {
 public:
-    struct Signature {
-        std::string name;
-        std::vector<std::string> member_names;
-    };
-
-    Struct(Signature *_sig) : sig(_sig), members(_sig->member_names.size()) { }
+    Struct(StructSig *_sig) : sig(_sig), members(_sig->num_members) { }
     ~Struct();
 
+    bool toBool(void) const;
     void visit(Visitor &visitor);
 
-    const Signature *sig;
+    const StructSig *sig;
     std::vector<Value *> members;
 };
 
@@ -217,6 +242,7 @@ public:
     Array(size_t len) : values(len) {}
     ~Array();
 
+    bool toBool(void) const;
     void visit(Visitor &visitor);
 
     std::vector<Value *> values;
@@ -233,6 +259,8 @@ public:
 
     ~Blob();
 
+    bool toBool(void) const;
+    void *toPointer(void) const;
     void visit(Visitor &visitor);
 
     size_t size;
@@ -245,6 +273,9 @@ class Pointer : public UInt
 public:
     Pointer(unsigned long long value) : UInt(value) {}
 
+    bool toBool(void) const;
+    void *toPointer(void) const;
+    unsigned long long toUIntPtr(void) const;
     void visit(Visitor &visitor);
 };
 
@@ -252,18 +283,18 @@ public:
 class Visitor
 {
 public:
-    virtual void visit(Null *) {assert(0);}
-    virtual void visit(Bool *) {assert(0);}
-    virtual void visit(SInt *) {assert(0);}
-    virtual void visit(UInt *) {assert(0);}
-    virtual void visit(Float *) {assert(0);}
-    virtual void visit(String *) {assert(0);}
-    virtual void visit(Enum *) {assert(0);}
-    virtual void visit(Bitmask *bitmask) {visit(static_cast<UInt *>(bitmask));}
-    virtual void visit(Struct *) {assert(0);}
-    virtual void visit(Array *) {assert(0);}
-    virtual void visit(Blob *) {assert(0);}
-    virtual void visit(Pointer *) {assert(0);}
+    virtual void visit(Null *);
+    virtual void visit(Bool *);
+    virtual void visit(SInt *);
+    virtual void visit(UInt *);
+    virtual void visit(Float *);
+    virtual void visit(String *);
+    virtual void visit(Enum *);
+    virtual void visit(Bitmask *);
+    virtual void visit(Struct *);
+    virtual void visit(Array *);
+    virtual void visit(Blob *);
+    virtual void visit(Pointer *);
 
 protected:
     inline void _visit(Value *value) {
@@ -277,32 +308,23 @@ protected:
 std::ostream & operator <<(std::ostream &os, Value *value);
 
 
-signed long long asSInt(const Value &node);
-unsigned long long asUInt(const Value &node);
-double asFloat(const Value &node);
-
-
 class Call
 {
 public:
-    struct Signature {
-        std::string name;
-        std::vector<std::string> arg_names;
-    };
-
     unsigned no;
-    const Signature *sig;
+    const FunctionSig *sig;
     std::vector<Value *> args;
     Value *ret;
 
-    Call(Signature *_sig) : sig(_sig), args(_sig->arg_names.size()), ret(0) { }
+    Call(FunctionSig *_sig) : sig(_sig), args(_sig->num_args), ret(0) { }
     ~Call();
 
-    inline const std::string name(void) const {
+    inline const char * name(void) const {
         return sig->name;
     }
 
     inline Value & arg(unsigned index) {
+        assert(index < args.size());
         return *(args[index]);
     }
 };

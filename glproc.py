@@ -34,6 +34,7 @@ from dispatch import Dispatcher
 from glapi import glapi
 from glxapi import glxapi
 from wglapi import wglapi
+from cglapi import cglapi
 
 
 # See http://www.opengl.org/registry/ABI/
@@ -410,27 +411,33 @@ class GlDispatcher(Dispatcher):
 
     def header(self):
         print '#ifdef RETRACE'
-        print '#  ifdef WIN32'
+        print '#  if defined(_WIN32)'
         print '#    define __getPrivateProcAddress(name) wglGetProcAddress(name)'
+        print '#  elif defined(__APPLE__)'
+        print '#    include <dlfcn.h>'
+        print '#    define __getPrivateProcAddress(name) dlsym(RTLD_DEFAULT, name)'
         print '#  else'
         print '#    define __getPrivateProcAddress(name) glXGetProcAddressARB((const GLubyte *)(name))'
         print '#  endif'
-        print '#  define __abort() OS::Abort()'
         print '#else /* !RETRACE */'
-        print '#  ifdef WIN32'
+        print '#  ifdef _WIN32'
         print '#    define __getPrivateProcAddress(name) __wglGetProcAddress(name)'
         print '     static inline PROC __stdcall __wglGetProcAddress(const char * lpszProc);'
         print '#  else'
-        print '#    define __getPublicProcAddress(name) dlsym(RTLD_NEXT, name)'
-        print '#    define __getPrivateProcAddress(name) __glXGetProcAddressARB((const GLubyte *)(name))'
-        print '     static inline __GLXextFuncPtr __glXGetProcAddressARB(const GLubyte * procName);'
+        print '#    define __getPublicProcAddress(name) __libgl_sym(name)'
+        print '     void * __libgl_sym(const char *symbol);'
+        print '#    ifdef __APPLE__'
+        print '#      define __getPrivateProcAddress(name) __getPublicProcAddress(name)'
+        print '#    else'
+        print '#      define __getPrivateProcAddress(name) __glXGetProcAddressARB((const GLubyte *)(name))'
+        print '       static inline __GLXextFuncPtr __glXGetProcAddressARB(const GLubyte * procName);'
+        print '#    endif'
         print '#  endif'
-        print '#  define __abort() Trace::Abort()'
         print '#endif /* !RETRACE */'
         print
         
     def is_public_function(self, function):
-        return function.name in public_symbols
+        return function.name in public_symbols or function.name.startswith('CGL')
 
 
 if __name__ == '__main__':
@@ -444,13 +451,15 @@ if __name__ == '__main__':
     print
     dispatcher = GlDispatcher()
     dispatcher.header()
-    print '#ifdef WIN32'
+    print '#if defined(_WIN32)'
     print
     dispatcher.dispatch_api(wglapi)
-    print '#else /* !WIN32 */'
+    print '#elif defined(__APPLE__)'
+    dispatcher.dispatch_api(cglapi)
+    print '#else'
     print
     dispatcher.dispatch_api(glxapi)
-    print '#endif /* !WIN32 */'
+    print '#endif'
     print
     dispatcher.dispatch_api(glapi)
     print

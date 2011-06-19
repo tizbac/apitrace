@@ -56,23 +56,112 @@ Array::~Array() {
 }
 
 Blob::~Blob() {
-    // FIXME
+    // TODO: Don't leak blobs.  Blobs are often bound and accessed during many
+    // calls, so we can't delete them here.
     //delete [] buf;
 }
 
 
-void Null::visit(Visitor &visitor) { visitor.visit(this); }
-void Bool::visit(Visitor &visitor) { visitor.visit(this); } 
-void SInt::visit(Visitor &visitor) { visitor.visit(this); } 
-void UInt::visit(Visitor &visitor) { visitor.visit(this); } 
-void Float::visit(Visitor &visitor) { visitor.visit(this); } 
-void String::visit(Visitor &visitor) { visitor.visit(this); } 
-void Enum::visit(Visitor &visitor) { visitor.visit(this); } 
-void Bitmask::visit(Visitor &visitor) { visitor.visit(this); } 
-void Struct::visit(Visitor &visitor) { visitor.visit(this); } 
-void Array::visit(Visitor &visitor) { visitor.visit(this); } 
-void Blob::visit(Visitor &visitor) { visitor.visit(this); } 
+// bool cast
+bool Null   ::toBool(void) const { return false; }
+bool Bool   ::toBool(void) const { return value; }
+bool SInt   ::toBool(void) const { return value != 0; }
+bool UInt   ::toBool(void) const { return value != 0; }
+bool Float  ::toBool(void) const { return value != 0; }
+bool String ::toBool(void) const { return true; }
+bool Enum   ::toBool(void) const { return sig->value != 0; }
+bool Struct ::toBool(void) const { return true; }
+bool Array  ::toBool(void) const { return true; }
+bool Blob   ::toBool(void) const { return true; }
+bool Pointer::toBool(void) const { return value != 0; }
+
+
+// signed integer cast
+signed long long Value  ::toSInt(void) const { assert(0); return 0; }
+signed long long Null   ::toSInt(void) const { return 0; }
+signed long long Bool   ::toSInt(void) const { return static_cast<signed long long>(value); }
+signed long long SInt   ::toSInt(void) const { return value; }
+signed long long UInt   ::toSInt(void) const { assert(static_cast<signed long long>(value) >= 0); return static_cast<signed long long>(value); }
+signed long long Float  ::toSInt(void) const { return static_cast<signed long long>(value); }
+signed long long Enum   ::toSInt(void) const { return sig->value; }
+
+
+// unsigned integer cast
+unsigned long long Value  ::toUInt(void) const { assert(0); return 0; }
+unsigned long long Null   ::toUInt(void) const { return 0; }
+unsigned long long Bool   ::toUInt(void) const { return static_cast<unsigned long long>(value); }
+unsigned long long SInt   ::toUInt(void) const { assert(value >= 0); return static_cast<signed long long>(value); }
+unsigned long long UInt   ::toUInt(void) const { return value; }
+unsigned long long Float  ::toUInt(void) const { return static_cast<unsigned long long>(value); }
+unsigned long long Enum   ::toUInt(void) const { assert(sig->value >= 0); return sig->value; }
+
+
+// floating point cast
+float Value  ::toFloat(void) const { assert(0); return 0; }
+float Null   ::toFloat(void) const { return 0; }
+float Bool   ::toFloat(void) const { return static_cast<float>(value); }
+float SInt   ::toFloat(void) const { return static_cast<float>(value); }
+float UInt   ::toFloat(void) const { return static_cast<float>(value); }
+float Float  ::toFloat(void) const { return value; }
+float Enum   ::toFloat(void) const { return static_cast<float>(sig->value); }
+
+
+// floating point cast
+double Value  ::toDouble(void) const { assert(0); return 0; }
+double Null   ::toDouble(void) const { return 0; }
+double Bool   ::toDouble(void) const { return static_cast<double>(value); }
+double SInt   ::toDouble(void) const { return static_cast<double>(value); }
+double UInt   ::toDouble(void) const { return static_cast<double>(value); }
+double Float  ::toDouble(void) const { return value; }
+double Enum   ::toDouble(void) const { return static_cast<double>(sig->value); }
+
+
+// pointer cast
+void * Value  ::toPointer(void) const { assert(0); return NULL; }
+void * Null   ::toPointer(void) const { return NULL; }
+void * Blob   ::toPointer(void) const { return buf; }
+void * Pointer::toPointer(void) const { return (void *)value; }
+
+
+// pointer cast
+unsigned long long Value  ::toUIntPtr(void) const { assert(0); return 0; }
+unsigned long long Null   ::toUIntPtr(void) const { return 0; }
+unsigned long long Pointer::toUIntPtr(void) const { return value; }
+
+
+// string cast
+const char * Value ::toString(void) const { assert(0); return NULL; }
+const char * Null  ::toString(void) const { return NULL; }
+const char * String::toString(void) const { return value; }
+
+
+// virtual Value::visit()
+void Null   ::visit(Visitor &visitor) { visitor.visit(this); }
+void Bool   ::visit(Visitor &visitor) { visitor.visit(this); }
+void SInt   ::visit(Visitor &visitor) { visitor.visit(this); }
+void UInt   ::visit(Visitor &visitor) { visitor.visit(this); }
+void Float  ::visit(Visitor &visitor) { visitor.visit(this); }
+void String ::visit(Visitor &visitor) { visitor.visit(this); }
+void Enum   ::visit(Visitor &visitor) { visitor.visit(this); }
+void Bitmask::visit(Visitor &visitor) { visitor.visit(this); }
+void Struct ::visit(Visitor &visitor) { visitor.visit(this); }
+void Array  ::visit(Visitor &visitor) { visitor.visit(this); }
+void Blob   ::visit(Visitor &visitor) { visitor.visit(this); }
 void Pointer::visit(Visitor &visitor) { visitor.visit(this); }
+
+
+void Visitor::visit(Null *) { assert(0); }
+void Visitor::visit(Bool *) { assert(0); }
+void Visitor::visit(SInt *) { assert(0); }
+void Visitor::visit(UInt *) { assert(0); }
+void Visitor::visit(Float *) { assert(0); }
+void Visitor::visit(String *) { assert(0); }
+void Visitor::visit(Enum *node) { assert(0); }
+void Visitor::visit(Bitmask *node) { visit(static_cast<UInt *>(node)); }
+void Visitor::visit(Struct *) { assert(0); }
+void Visitor::visit(Array *) { assert(0); }
+void Visitor::visit(Blob *) { assert(0); }
+void Visitor::visit(Pointer *) { assert(0); }
 
 
 class Dumper : public Visitor
@@ -129,25 +218,53 @@ public:
     }
 
     void visit(String *node) {
-        os << literal << '"' << node->value << '"' << normal;
+        os << literal << "\"";
+        for (const char *it = node->value; *it; ++it) {
+            unsigned char c = (unsigned char) *it;
+            if (c == '\"')
+                os << "\\\"";
+            else if (c == '\\')
+                os << "\\\\";
+            else if (c >= 0x20 && c <= 0x7e)
+                os << c;
+            else if (c == '\t') {
+                os << "\t";
+            } else if (c == '\r') {
+                // Ignore carriage-return
+            } else if (c == '\n') {
+                // Reset formatting so that it looks correct with 'less -R'
+                os << normal << '\n' << literal;
+            } else {
+                unsigned octal0 = c & 0x7;
+                unsigned octal1 = (c >> 3) & 0x7;
+                unsigned octal2 = (c >> 3) & 0x7;
+                os << "\\";
+                if (octal2)
+                    os << octal2;
+                if (octal1)
+                    os << octal1;
+                os << octal0;
+            }
+        }
+        os << "\"" << normal;
     }
 
     void visit(Enum *node) {
-        os << literal << node->sig->first << normal;
+        os << literal << node->sig->name << normal;
     }
 
     void visit(Bitmask *bitmask) {
         unsigned long long value = bitmask->value;
-        const Bitmask::Signature *sig = bitmask->sig;
+        const BitmaskSig *sig = bitmask->sig;
         bool first = true;
-        for (Bitmask::Signature::const_iterator it = sig->begin(); value != 0 && it != sig->end(); ++it) {
-            assert(it->second);
-            if ((value & it->second) == it->second) {
+        for (const BitmaskFlag *it = sig->flags; value != 0 && it != sig->flags + sig->num_flags; ++it) {
+            if ((it->value && (value & it->value) == it->value) ||
+                (!it->value && value == 0)) {
                 if (!first) {
                     os << " | ";
                 }
-                os << literal << it->first << normal;
-                value &= ~it->second;
+                os << literal << it->name << normal;
+                value &= ~it->value;
                 first = false;
             }
         }
@@ -200,7 +317,11 @@ public:
         os << bold << call->sig->name << normal << "(";
         for (unsigned i = 0; i < call->args.size(); ++i) {
             os << sep << italic << call->sig->arg_names[i] << normal << " = ";
-            _visit(call->args[i]);
+            if (call->args[i]) {
+                _visit(call->args[i]);
+            } else {
+               os << "?";
+            }
             sep = ", ";
         }
         os << ")";
@@ -222,85 +343,16 @@ std::ostream & operator <<(std::ostream &os, Value *value) {
 }
 
 
-static inline const Value *unwrap(const Value *node) {
-    const Enum *c = dynamic_cast<const Enum *>(node);
-    if (c)
-        return c->sig->second;
-    return node;
-}
-
-
-Value::operator bool(void) const {
-    const Bool *b = dynamic_cast<const Bool *>(unwrap(this));
-    if (b)
-        return b->value;
-    assert(0);
-    return false;
-}
-
-Value::operator signed long long(void) const {
-    const SInt *sint = dynamic_cast<const SInt *>(unwrap(this));
-    if (sint)
-        return sint->value;
-    const UInt *uint = dynamic_cast<const UInt *>(unwrap(this));
-    if (uint)
-        return uint->value;
-    assert(0);
-    return 0;
-}
-
-Value::operator unsigned long long(void) const {
-    const UInt *uint = dynamic_cast<const UInt *>(unwrap(this));
-    if (uint)
-        return uint->value;
-    assert(0);
-    return 0;
-}
-
-
-Value::operator double(void) const {
-    const Float *fl = dynamic_cast<const Float *>(unwrap(this));
-    assert(fl);
-    return fl->value;
-}
-
 static Null null;
 
 const Value & Value::operator[](size_t index) const {
-    const Array *array = dynamic_cast<const Array *>(unwrap(this));
+    const Array *array = dynamic_cast<const Array *>(this);
     if (array) {
         if (index < array->values.size()) {
             return *array->values[index];
         }
     }
     return null;
-}
-
-void * Value::blob(void) const {
-    const Blob *blob = dynamic_cast<const Blob *>(unwrap(this));
-    if (blob)
-        return blob->buf;
-    const Null *null = dynamic_cast<const Null *>(unwrap(this));
-    if (null)
-        return NULL;
-    const Pointer *pointer = dynamic_cast<const Pointer *>(unwrap(this));
-    if (pointer) {
-        assert(pointer->value  < 0x100000ULL);
-        return (void *)pointer->value;
-    }
-    assert(0);
-    return NULL;
-}
-
-const char * Value::string(void) const {
-    const String *string = dynamic_cast<const String *>(unwrap(this));
-    if (string)
-        return string->value.c_str();
-    const Null *null = dynamic_cast<const Null *>(unwrap(this));
-    if (null)
-        return NULL;
-    assert(0);
-    return NULL;
 }
 
 std::ostream & operator <<(std::ostream &os, Call &call) {

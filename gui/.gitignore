@@ -1,0 +1,3 @@
+*.moc
+qrc_qapitrace.cxx
+ui_*.h

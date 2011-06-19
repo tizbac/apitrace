@@ -99,18 +99,25 @@ DebugMessage(const char *format, ...)
     va_end(ap);
 
     OutputDebugStringA(buf);
+
+    /*
+     * Also write the message to stderr, when a debugger is not present (to
+     * avoid duplicate messages in command line debuggers).
+     */
+#if _WIN32_WINNT > 0x0400
     if (!IsDebuggerPresent()) {
         fflush(stdout);
         fputs(buf, stderr);
         fflush(stderr);
     }
+#endif
 }
 
 long long GetTime(void)
 {
     static LARGE_INTEGER frequency;
     LARGE_INTEGER counter;
-    if(!frequency.QuadPart)
+    if (!frequency.QuadPart)
         QueryPerformanceFrequency(&frequency);
     QueryPerformanceCounter(&counter);
     return counter.QuadPart*1000000LL/frequency.QuadPart;

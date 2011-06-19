@@ -37,10 +37,7 @@ class ConstRemover(stdapi.Rebuilder):
         return const.type
 
     def visit_opaque(self, opaque):
-        expr = opaque.expr
-        if expr.startswith('const '):
-            expr = expr[6:]
-        return stdapi.Opaque(expr)
+        return opaque
 
 
 def handle_entry(handle, value):
@@ -54,10 +51,8 @@ def handle_entry(handle, value):
 class ValueExtractor(stdapi.Visitor):
 
     def visit_literal(self, literal, lvalue, rvalue):
-        if literal.format == 'Bool':
-            print '    %s = static_cast<bool>(%s);' % (lvalue, rvalue)
-        else:
-            print '    %s = %s;' % (lvalue, rvalue)
+        #if literal.format in ('Bool', 'UInt'):
+        print '    %s = (%s).to%s();' % (lvalue, rvalue, literal.format)
 
     def visit_const(self, const, lvalue, rvalue):
         self.visit(const.type, lvalue, rvalue)
@@ -66,7 +61,7 @@ class ValueExtractor(stdapi.Visitor):
         self.visit(alias.type, lvalue, rvalue)
     
     def visit_enum(self, enum, lvalue, rvalue):
-        print '    %s = %s;' % (lvalue, rvalue)
+        print '    %s = (%s).toSInt();' % (lvalue, rvalue)
 
     def visit_bitmask(self, bitmask, lvalue, rvalue):
         self.visit(bitmask.type, lvalue, rvalue)
@@ -77,7 +72,7 @@ class ValueExtractor(stdapi.Visitor):
         length = '__a%s->values.size()' % array.id
         print '        %s = new %s[%s];' % (lvalue, array.type, length)
         index = '__j' + array.id
-        print '        for(size_t {i} = 0; {i} < {length}; ++{i}) {{'.format(i = index, length = length)
+        print '        for (size_t {i} = 0; {i} < {length}; ++{i}) {{'.format(i = index, length = length)
         try:
             self.visit(array.type, '%s[%s]' % (lvalue, index), '*__a%s->values[%s]' % (array.id, index))
         finally:
@@ -98,16 +93,28 @@ class ValueExtractor(stdapi.Visitor):
             print '    }'
 
     def visit_handle(self, handle, lvalue, rvalue):
-        self.visit(handle.type, lvalue, handle_entry(handle, rvalue));
-        print '    if (verbosity >= 2)'
-        print '        std::cout << "%s " << static_cast<%s>(%s) << " <- " << %s << "\\n";' % (handle.name, handle.type, rvalue, lvalue)
+        OpaqueValueExtractor().visit(handle.type, lvalue, rvalue);
+        new_lvalue = handle_entry(handle, lvalue)
+        print '    if (retrace::verbosity >= 2) {'
+        print '        std::cout << "%s " << size_t(%s) << " <- " << size_t(%s) << "\\n";' % (handle.name, lvalue, new_lvalue)
+        print '    }'
+        print '    %s = %s;' % (lvalue, new_lvalue)
     
     def visit_blob(self, blob, lvalue, rvalue):
-        print '    %s = static_cast<%s>((%s).blob());' % (lvalue, blob, rvalue)
+        print '    %s = static_cast<%s>((%s).toPointer());' % (lvalue, blob, rvalue)
     
     def visit_string(self, string, lvalue, rvalue):
-        print '    %s = (%s)((%s).string());' % (lvalue, string.expr, rvalue)
+        print '    %s = (%s)((%s).toString());' % (lvalue, string.expr, rvalue)
 
+
+class OpaqueValueExtractor(ValueExtractor):
+    '''Value extractor that also understands opaque values.
+
+    Normally opaque values can't be retraced, unless they are being extracted
+    in the context of handles.'''
+
+    def visit_opaque(self, opaque, lvalue, rvalue):
+        print '    %s = static_cast<%s>((%s).toPointer());' % (lvalue, opaque, rvalue)
 
 
 class ValueWrapper(stdapi.Visitor):
@@ -129,7 +136,7 @@ class ValueWrapper(stdapi.Visitor):
         print '    if (__a%s) {' % (array.id)
         length = '__a%s->values.size()' % array.id
         index = '__j' + array.id
-        print '        for(size_t {i} = 0; {i} < {length}; ++{i}) {{'.format(i = index, length = length)
+        print '        for (size_t {i} = 0; {i} < {length}; ++{i}) {{'.format(i = index, length = length)
         try:
             self.visit(array.type, '%s[%s]' % (lvalue, index), '*__a%s->values[%s]' % (array.id, index))
         finally:
@@ -144,23 +151,26 @@ class ValueWrapper(stdapi.Visitor):
         finally:
             print '    }'
     
-
     def visit_handle(self, handle, lvalue, rvalue):
+        print '    %s __orig_result;' % handle.type
+        OpaqueValueExtractor().visit(handle.type, '__orig_result', rvalue);
         if handle.range is None:
-            rvalue = "static_cast<%s>(%s)" % (handle.type, rvalue)
+            rvalue = "__orig_result"
             entry = handle_entry(handle, rvalue) 
             print "    %s = %s;" % (entry, lvalue)
-            print '    if (verbosity >= 2)'
+            print '    if (retrace::verbosity >= 2) {'
             print '        std::cout << "{handle.name} " << {rvalue} << " -> " << {lvalue} << "\\n";'.format(**locals())
+            print '    }'
         else:
             i = '__h' + handle.id
             lvalue = "%s + %s" % (lvalue, i)
-            rvalue = "static_cast<%s>(%s) + %s" % (handle.type, rvalue, i)
+            rvalue = "__orig_result + %s" % (i,)
             entry = handle_entry(handle, rvalue) 
-            print '    for({handle.type} {i} = 0; {i} < {handle.range}; ++{i}) {{'.format(**locals())
+            print '    for ({handle.type} {i} = 0; {i} < {handle.range}; ++{i}) {{'.format(**locals())
             print '        {entry} = {lvalue};'.format(**locals())
-            print '        if (verbosity >= 2)'
+            print '        if (retrace::verbosity >= 2) {'
             print '            std::cout << "{handle.name} " << ({rvalue}) << " -> " << ({lvalue}) << "\\n";'.format(**locals())
+            print '        }'
             print '    }'
     
     def visit_blob(self, blob, lvalue, rvalue):
@@ -179,6 +189,10 @@ class Retracer:
         print
 
     def retrace_function_body(self, function):
+        if not function.sideeffects:
+            print '    (void)call;'
+            return
+
         success = True
         for arg in function.args:
             arg_type = ConstRemover().visit(arg.type)
@@ -192,7 +206,9 @@ class Retracer:
                 success = False
                 print '    %s = 0; // FIXME' % arg.name
         if not success:
+            print '    if (1) {'
             self.fail_function(function)
+            print '    }'
         self.call_function(function)
         for arg in function.args:
             if arg.output:
@@ -212,18 +228,22 @@ class Retracer:
                 print '   // FIXME: result'
 
     def fail_function(self, function):
-        print '    if (verbosity >= 0)'
+        print '    if (retrace::verbosity >= 0)'
         print '        std::cerr << "warning: unsupported call %s\\n";' % function.name
         print '    return;'
 
     def extract_arg(self, function, arg, arg_type, lvalue, rvalue):
         ValueExtractor().visit(arg_type, lvalue, rvalue)
+    
+    def extract_opaque_arg(self, function, arg, arg_type, lvalue, rvalue):
+        OpaqueValueExtractor().visit(arg_type, lvalue, rvalue)
 
     def call_function(self, function):
         arg_names = ", ".join([arg.name for arg in function.args])
         if function.type is not stdapi.Void:
             print '    %s __result;' % (function.type)
             print '    __result = %s(%s);' % (function.name, arg_names)
+            print '    (void)__result;'
         else:
             print '    %s(%s);' % (function.name, arg_names)
 
@@ -234,31 +254,22 @@ class Retracer:
         functions = filter(self.filter_function, functions)
 
         for function in functions:
-            if function.sideeffects:
-                self.retrace_function(function)
+            self.retrace_function(function)
 
-        print 'static bool retrace_call(Trace::Call &call) {'
-        print '    const char *name = call.name().c_str();'
-        print
-        print '    if (verbosity >= 1) {'
-        print '        std::cout << call;'
-        print '        std::cout.flush();'
-        print '    };'
+        print 'void retrace::retrace_call(Trace::Call &call) {'
+        print '    const char *name = call.name();'
         print
 
         func_dict = dict([(function.name, function) for function in functions])
 
         def handle_case(function_name):
             function = func_dict[function_name]
-            if function.sideeffects:
-                print '        retrace_%s(call);' % function.name
-            print '        return true;'
+            print '        retrace_%s(call);' % function.name
+            print '        return;'
     
         string_switch('name', func_dict.keys(), handle_case)
 
-        print '    if (verbosity >= 0)'
-        print '        std::cerr << "warning: unknown call " << call.name() << "\\n";'
-        print '    return false;'
+        print '    retrace_unknown(call);'
         print '}'
         print
 
@@ -266,6 +277,7 @@ class Retracer:
     def retrace_api(self, api):
 
         print '#include "trace_parser.hpp"'
+        print '#include "retrace.hpp"'
         print
 
         types = api.all_types()
@@ -274,14 +286,11 @@ class Retracer:
         for handle in handles:
             if handle.name not in handle_names:
                 if handle.key is None:
-                    print 'static std::map<%s, %s> __%s_map;' % (handle.type, handle.type, handle.name)
+                    print 'static retrace::map<%s> __%s_map;' % (handle.type, handle.name)
                 else:
                     key_name, key_type = handle.key
-                    print 'static std::map<%s, std::map<%s, %s> > __%s_map;' % (key_type, handle.type, handle.type, handle.name)
+                    print 'static std::map<%s, retrace::map<%s> > __%s_map;' % (key_type, handle.type, handle.name)
                 handle_names.add(handle.name)
-        print
-
-        print 'int verbosity = 0;'
         print
 
         self.retrace_functions(api.functions)

@@ -28,6 +28,7 @@
 from winapi import *
 from d3d8types import *
 from d3d8caps import *
+from trace import DllTracer
 
 HRESULT = Enum("HRESULT", [
     "D3D_OK",
@@ -105,6 +106,9 @@ IDirect3DDevice8.methods += [
     Method(HRESULT, "GetDisplayMode", [Out(Pointer(D3DDISPLAYMODE), "pMode")]),
     Method(HRESULT, "GetCreationParameters", [Out(Pointer(D3DDEVICE_CREATION_PARAMETERS), "pParameters")]),
     Method(HRESULT, "SetCursorProperties", [(UINT, "XHotSpot"), (UINT, "YHotSpot"), (PDIRECT3DSURFACE8, "pCursorBitmap")]),
+    # XXX: There are different signatures of
+    # IDirect3DDevice8::SetCursorPosition depending on the DXSDK version
+    Method(Void, "SetCursorPosition", [(UINT, "XScreenSpace"), (UINT, "YScreenSpace"), (DWORD, "Flags")]),
     Method(Void, "SetCursorPosition", [(Int, "X"), (Int, "Y"), (DWORD, "Flags")]),
     Method(BOOL, "ShowCursor", [(BOOL, "bShow")]),
     Method(HRESULT, "CreateAdditionalSwapChain", [Out(Pointer(D3DPRESENT_PARAMETERS), "pPresentationParameters"), Out(Pointer(PDIRECT3DSWAPCHAIN8), "pSwapChain")]),
@@ -130,7 +134,7 @@ IDirect3DDevice8.methods += [
     Method(HRESULT, "GetDepthStencilSurface", [Out(Pointer(PDIRECT3DSURFACE8), "ppZStencilSurface")]),
     Method(HRESULT, "BeginScene", []),
     Method(HRESULT, "EndScene", []),
-    Method(HRESULT, "Clear", [(DWORD, "Count"), (ConstPointer(D3DRECT), "pRects"), (DWORD, "Flags"), (D3DCOLOR, "Color"), (Float, "Z"), (DWORD, "Stencil")]),
+    Method(HRESULT, "Clear", [(DWORD, "Count"), (ConstPointer(D3DRECT), "pRects"), (D3DCLEAR, "Flags"), (D3DCOLOR, "Color"), (Float, "Z"), (DWORD, "Stencil")]),
     Method(HRESULT, "SetTransform", [(D3DTRANSFORMSTATETYPE, "State"), (ConstPointer(D3DMATRIX), "pMatrix")]),
     Method(HRESULT, "GetTransform", [(D3DTRANSFORMSTATETYPE, "State"), Out(Pointer(D3DMATRIX), "pMatrix")]),
     Method(HRESULT, "MultiplyTransform", [(D3DTRANSFORMSTATETYPE, "State"), (ConstPointer(D3DMATRIX), "pMatrix")]),
@@ -273,17 +277,31 @@ IDirect3DVolume8.methods += [
     Method(HRESULT, "UnlockBox", []),
 ]
 
-d3d8 = Dll("d3d8")
-d3d8.functions += [
+d3d8 = API("d3d8")
+d3d8.add_functions([
     StdFunction(PDIRECT3D8, "Direct3DCreate8", [(UINT, "SDKVersion")]),
-]
+])
+
+
+class D3D8Tracer(DllTracer):
+
+    def dump_arg_instance(self, function, arg):
+        # Dump shaders as strings
+        if function.name in ('CreateVertexShader', 'CreatePixelShader') and arg.name == 'pFunction':
+            print '    DumpShader(__writer, %s);' % (arg.name)
+            return
+
+        DllTracer.dump_arg_instance(self, function, arg)
+
 
 if __name__ == '__main__':
     print '#include <windows.h>'
-    print '#include <tchar.h>'
     print '#include <d3d8.h>'
+    print '#include "d3dshader.hpp"'
     print
-    print '#include "trace_write.hpp"'
+    print '#include "trace_writer.hpp"'
+    print '#include "os.hpp"'
     print
-    wrap()
+    tracer = D3D8Tracer('d3d8.dll')
+    tracer.trace_api(d3d8)
 

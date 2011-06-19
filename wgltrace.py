@@ -37,9 +37,6 @@ from codegen import *
 
 class WglTracer(GlTracer):
 
-    def get_function_address(self, function):
-        return '__%s' % (function.name,)
-
     extensions = [
         # GL_VERSION_1_2
         "GL_EXT_bgra",
@@ -148,7 +145,9 @@ class WglTracer(GlTracer):
             print '    }'
 
     def wrap_ret(self, function, instance):
-        if function.name == 'wglGetProcAddress':
+        GlTracer.wrap_ret(self, function, instance)
+
+        if function.name == "wglGetProcAddress":
             print '    if (%s) {' % instance
         
             func_dict = dict([(f.name, f) for f in glapi.functions + wglapi.functions])
@@ -161,7 +160,7 @@ class WglTracer(GlTracer):
                 print '    %s = (%s)&%s;' % (instance, function.type, f.name);
         
             def handle_default():
-                print '    OS::DebugMessage("apitrace: unknown function \\"%s\\"\\n", lpszProc);'
+                print '    OS::DebugMessage("apitrace: warning: unknown function \\"%s\\"\\n", lpszProc);'
                 print '    %s = (%s)NULL;' % (instance, function.type);
 
             string_switch('lpszProc', func_dict.keys(), handle_case, handle_default)
@@ -175,7 +174,7 @@ if __name__ == '__main__':
     print '#include <string.h>'
     print '#include <windows.h>'
     print
-    print '#include "trace_write.hpp"'
+    print '#include "trace_writer.hpp"'
     print '#include "os.hpp"'
     print
     print '''
@@ -203,15 +202,15 @@ __getPublicProcAddress(LPCSTR lpProcName)
 }
 
     '''
+    print '// To validate our prototypes'
+    print '#define GL_GLEXT_PROTOTYPES'
+    print '#define WGL_GLXEXT_PROTOTYPES'
+    print
     print '#include "glproc.hpp"'
     print '#include "glsize.hpp"'
-    print
-    print 'extern "C" {'
     print
     api = API()
     api.add_api(glapi)
     api.add_api(wglapi)
     tracer = WglTracer()
     tracer.trace_api(api)
-    print
-    print '} /* extern "C" */'

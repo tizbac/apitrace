@@ -32,6 +32,52 @@ from trace import DllTracer
 
 D3DSHADER9 = Opaque("const DWORD *")
 
+D3DSPD = Flags(DWORD, [
+    "D3DSPD_IUNKNOWN",
+])
+
+D3DCREATE = Flags(DWORD, [
+    "D3DCREATE_FPU_PRESERVE",
+    "D3DCREATE_MULTITHREADED",
+    "D3DCREATE_PUREDEVICE",
+    "D3DCREATE_SOFTWARE_VERTEXPROCESSING",
+    "D3DCREATE_HARDWARE_VERTEXPROCESSING",
+    "D3DCREATE_MIXED_VERTEXPROCESSING",
+    "D3DCREATE_DISABLE_DRIVER_MANAGEMENT",
+    "D3DCREATE_ADAPTERGROUP_DEVICE",
+    "D3DCREATE_DISABLE_DRIVER_MANAGEMENT_EX",
+    "D3DCREATE_NOWINDOWCHANGES",
+    "D3DCREATE_DISABLE_PSGP_THREADING",
+    "D3DCREATE_ENABLE_PRESENTSTATS",
+    "D3DCREATE_DISABLE_PRINTSCREEN",
+    "D3DCREATE_SCREENSAVER",
+])
+
+D3DADAPTER = FakeEnum(DWORD, [
+    "D3DADAPTER_DEFAULT",
+])
+
+D3DENUM = FakeEnum(DWORD, [
+    "D3DENUM_WHQL_LEVEL",
+])
+
+D3DSGR = Flags(DWORD, [
+    "D3DSGR_NO_CALIBRATION",
+    "D3DSGR_CALIBRATE",
+])
+
+D3DCURSOR = Flags(DWORD, [
+    "D3DCURSOR_IMMEDIATE_UPDATE",
+])
+
+D3DPRESENT = Flags(DWORD, [
+    "D3DPRESENT_DONOTWAIT",
+    "D3DPRESENT_LINEAR_CONTENT",
+    "D3DPRESENT_DONOTFLIP",
+    "D3DPRESENT_FLIPRESTART",
+    "D3DPRESENT_VIDEO_RESTRICT_TO_MONITOR",
+])
+
 HRESULT = Enum("HRESULT", [
     "D3D_OK",
     "D3DERR_WRONGTEXTUREFORMAT",
@@ -110,7 +156,7 @@ PDIRECT3DSWAPCHAIN9EX = WrapPointer(IDirect3DSwapChain9Ex)
 IDirect3D9.methods += [
     Method(HRESULT, "RegisterSoftwareDevice", [(OpaquePointer(Void), "pInitializeFunction")]),
     Method(UINT, "GetAdapterCount", []),
-    Method(HRESULT, "GetAdapterIdentifier", [(UINT, "Adapter"), (DWORD, "Flags"), Out(Pointer(D3DADAPTER_IDENTIFIER9), "pIdentifier")]),
+    Method(HRESULT, "GetAdapterIdentifier", [(UINT, "Adapter"), (D3DENUM, "Flags"), Out(Pointer(D3DADAPTER_IDENTIFIER9), "pIdentifier")]),
     Method(UINT, "GetAdapterModeCount", [(UINT, "Adapter"), (D3DFORMAT, "Format")]),
     Method(HRESULT, "EnumAdapterModes", [(UINT, "Adapter"), (D3DFORMAT, "Format"), (UINT, "Mode"), Out(Pointer(D3DDISPLAYMODE), "pMode")]),
     Method(HRESULT, "GetAdapterDisplayMode", [(UINT, "Adapter"), Out(Pointer(D3DDISPLAYMODE), "pMode")]),
@@ -121,7 +167,7 @@ IDirect3D9.methods += [
     Method(HRESULT, "CheckDeviceFormatConversion", [(UINT, "Adapter"), (D3DDEVTYPE, "DeviceType"), (D3DFORMAT, "SourceFormat"), (D3DFORMAT, "TargetFormat")]),
     Method(HRESULT, "GetDeviceCaps", [(UINT, "Adapter"), (D3DDEVTYPE, "DeviceType"), Out(Pointer(D3DCAPS9), "pCaps")]),
     Method(HMONITOR, "GetAdapterMonitor", [(UINT, "Adapter")]),
-    Method(HRESULT, "CreateDevice", [(UINT, "Adapter"), (D3DDEVTYPE, "DeviceType"), (HWND, "hFocusWindow"), (DWORD, "BehaviorFlags"), Out(Pointer(D3DPRESENT_PARAMETERS), "pPresentationParameters"), Out(Pointer(PDIRECT3DDEVICE9), "ppReturnedDeviceInterface")]),
+    Method(HRESULT, "CreateDevice", [(UINT, "Adapter"), (D3DDEVTYPE, "DeviceType"), (HWND, "hFocusWindow"), (D3DCREATE, "BehaviorFlags"), Out(Pointer(D3DPRESENT_PARAMETERS), "pPresentationParameters"), Out(Pointer(PDIRECT3DDEVICE9), "ppReturnedDeviceInterface")]),
 ]
 
 IDirect3DDevice9.methods += [
@@ -133,7 +179,7 @@ IDirect3DDevice9.methods += [
     Method(HRESULT, "GetDisplayMode", [(UINT, "iSwapChain"), Out(Pointer(D3DDISPLAYMODE), "pMode")]),
     Method(HRESULT, "GetCreationParameters", [Out(Pointer(D3DDEVICE_CREATION_PARAMETERS), "pParameters")]),
     Method(HRESULT, "SetCursorProperties", [(UINT, "XHotSpot"), (UINT, "YHotSpot"), (PDIRECT3DSURFACE9, "pCursorBitmap")]),
-    Method(Void, "SetCursorPosition", [(Int, "X"), (Int, "Y"), (DWORD, "Flags")]),
+    Method(Void, "SetCursorPosition", [(Int, "X"), (Int, "Y"), (D3DCURSOR, "Flags")]),
     Method(BOOL, "ShowCursor", [(BOOL, "bShow")]),
     Method(HRESULT, "CreateAdditionalSwapChain", [Out(Pointer(D3DPRESENT_PARAMETERS), "pPresentationParameters"), Out(Pointer(PDIRECT3DSWAPCHAIN9), "pSwapChain")]),
     Method(HRESULT, "GetSwapChain", [(UINT, "iSwapChain"), Out(Pointer(PDIRECT3DSWAPCHAIN9), "pSwapChain")]),
@@ -143,7 +189,7 @@ IDirect3DDevice9.methods += [
     Method(HRESULT, "GetBackBuffer", [(UINT, "iSwapChain"), (UINT, "iBackBuffer"), (D3DBACKBUFFER_TYPE, "Type"), Out(Pointer(PDIRECT3DSURFACE9), "ppBackBuffer")]),
     Method(HRESULT, "GetRasterStatus", [(UINT, "iSwapChain"), Out(Pointer(D3DRASTER_STATUS), "pRasterStatus")]),
     Method(HRESULT, "SetDialogBoxMode", [(BOOL, "bEnableDialogs")]),
-    Method(Void, "SetGammaRamp", [(UINT, "iSwapChain"), (DWORD, "Flags"), (ConstPointer(D3DGAMMARAMP), "pRamp")]),
+    Method(Void, "SetGammaRamp", [(UINT, "iSwapChain"), (D3DSGR, "Flags"), (ConstPointer(D3DGAMMARAMP), "pRamp")]),
     Method(Void, "GetGammaRamp", [(UINT, "iSwapChain"), Out(Pointer(D3DGAMMARAMP), "pRamp")]),
     Method(HRESULT, "CreateTexture", [(UINT, "Width"), (UINT, "Height"), (UINT, "Levels"), (D3DUSAGE, "Usage"), (D3DFORMAT, "Format"), (D3DPOOL, "Pool"), Out(Pointer(PDIRECT3DTEXTURE9), "ppTexture"), Out(Pointer(HANDLE), "pSharedHandle")]),
     Method(HRESULT, "CreateVolumeTexture", [(UINT, "Width"), (UINT, "Height"), (UINT, "Depth"), (UINT, "Levels"), (D3DUSAGE, "Usage"), (D3DFORMAT, "Format"), (D3DPOOL, "Pool"), Out(Pointer(PDIRECT3DVOLUMETEXTURE9), "ppVolumeTexture"), Out(Pointer(HANDLE), "pSharedHandle")]),
@@ -207,7 +253,7 @@ IDirect3DDevice9.methods += [
     Method(HRESULT, "DrawIndexedPrimitive", [(D3DPRIMITIVETYPE, "PrimitiveType"), (INT, "BaseVertexIndex"), (UINT, "MinVertexIndex"), (UINT, "NumVertices"), (UINT, "startIndex"), (UINT, "primCount")]),
     Method(HRESULT, "DrawPrimitiveUP", [(D3DPRIMITIVETYPE, "PrimitiveType"), (UINT, "PrimitiveCount"), (OpaquePointer(Const(Void)), "pVertexStreamZeroData"), (UINT, "VertexStreamZeroStride")]),
     Method(HRESULT, "DrawIndexedPrimitiveUP", [(D3DPRIMITIVETYPE, "PrimitiveType"), (UINT, "MinVertexIndex"), (UINT, "NumVertices"), (UINT, "PrimitiveCount"), (OpaquePointer(Const(Void)), "pIndexData"), (D3DFORMAT, "IndexDataFormat"), (OpaquePointer(Const(Void)), "pVertexStreamZeroData"), (UINT, "VertexStreamZeroStride")]),
-    Method(HRESULT, "ProcessVertices", [(UINT, "SrcStartIndex"), (UINT, "DestIndex"), (UINT, "VertexCount"), (PDIRECT3DVERTEXBUFFER9, "pDestBuffer"), (PDIRECT3DVERTEXDECLARATION9, "pVertexDecl"), (DWORD, "Flags")]),
+    Method(HRESULT, "ProcessVertices", [(UINT, "SrcStartIndex"), (UINT, "DestIndex"), (UINT, "VertexCount"), (PDIRECT3DVERTEXBUFFER9, "pDestBuffer"), (PDIRECT3DVERTEXDECLARATION9, "pVertexDecl"), (D3DPV, "Flags")]),
     Method(HRESULT, "CreateVertexDeclaration", [(ConstPointer(D3DVERTEXELEMENT9), "pVertexElements"), Out(Pointer(PDIRECT3DVERTEXDECLARATION9), "ppDecl")]),
     Method(HRESULT, "SetVertexDeclaration", [(PDIRECT3DVERTEXDECLARATION9, "pDecl")]),
     Method(HRESULT, "GetVertexDeclaration", [Out(Pointer(PDIRECT3DVERTEXDECLARATION9), "ppDecl")]),
@@ -216,12 +262,12 @@ IDirect3DDevice9.methods += [
     Method(HRESULT, "CreateVertexShader", [(D3DSHADER9, "pFunction"), Out(Pointer(PDIRECT3DVERTEXSHADER9), "ppShader")]),
     Method(HRESULT, "SetVertexShader", [(PDIRECT3DVERTEXSHADER9, "pShader")]),
     Method(HRESULT, "GetVertexShader", [Out(Pointer(PDIRECT3DVERTEXSHADER9), "ppShader")]),
-    Method(HRESULT, "SetVertexShaderConstantF", [(UINT, "StartRegister"), (ConstPointer(Float), "pConstantData"), (UINT, "Vector4fCount")]),
-    Method(HRESULT, "GetVertexShaderConstantF", [(UINT, "StartRegister"), Out(Pointer(Float), "pConstantData"), (UINT, "Vector4fCount")]),
-    Method(HRESULT, "SetVertexShaderConstantI", [(UINT, "StartRegister"), (ConstPointer(Int), "pConstantData"), (UINT, "Vector4iCount")]),
-    Method(HRESULT, "GetVertexShaderConstantI", [(UINT, "StartRegister"), Out(Pointer(Int), "pConstantData"), (UINT, "Vector4iCount")]),
-    Method(HRESULT, "SetVertexShaderConstantB", [(UINT, "StartRegister"), (ConstPointer(BOOL), "pConstantData"), (UINT, "BoolCount")]),
-    Method(HRESULT, "GetVertexShaderConstantB", [(UINT, "StartRegister"), Out(Pointer(BOOL), "pConstantData"), (UINT, "BoolCount")]),
+    Method(HRESULT, "SetVertexShaderConstantF", [(UINT, "StartRegister"), (Const(Array(Float, "4*Vector4fCount")), "pConstantData"), (UINT, "Vector4fCount")]),
+    Method(HRESULT, "GetVertexShaderConstantF", [(UINT, "StartRegister"), Out(Array(Float, "4*Vector4fCount"), "pConstantData"), (UINT, "Vector4fCount")]),
+    Method(HRESULT, "SetVertexShaderConstantI", [(UINT, "StartRegister"), (Const(Array(Int, "4*Vector4iCount")), "pConstantData"), (UINT, "Vector4iCount")]),
+    Method(HRESULT, "GetVertexShaderConstantI", [(UINT, "StartRegister"), Out(Array(Int, "4*Vector4iCount"), "pConstantData"), (UINT, "Vector4iCount")]),
+    Method(HRESULT, "SetVertexShaderConstantB", [(UINT, "StartRegister"), (Const(Array(BOOL, "BoolCount")), "pConstantData"), (UINT, "BoolCount")]),
+    Method(HRESULT, "GetVertexShaderConstantB", [(UINT, "StartRegister"), Out(Array(BOOL, "BoolCount"), "pConstantData"), (UINT, "BoolCount")]),
     Method(HRESULT, "SetStreamSource", [(UINT, "StreamNumber"), (PDIRECT3DVERTEXBUFFER9, "pStreamData"), (UINT, "OffsetInBytes"), (UINT, "Stride")]),
     Method(HRESULT, "GetStreamSource", [(UINT, "StreamNumber"), Out(Pointer(PDIRECT3DVERTEXBUFFER9), "ppStreamData"), Out(Pointer(UINT), "pOffsetInBytes"), Out(Pointer(UINT), "pStride")]),
     Method(HRESULT, "SetStreamSourceFreq", [(UINT, "StreamNumber"), (UINT, "Setting")]),
@@ -231,12 +277,12 @@ IDirect3DDevice9.methods += [
     Method(HRESULT, "CreatePixelShader", [(D3DSHADER9, "pFunction"), Out(Pointer(PDIRECT3DPIXELSHADER9), "ppShader")]),
     Method(HRESULT, "SetPixelShader", [(PDIRECT3DPIXELSHADER9, "pShader")]),
     Method(HRESULT, "GetPixelShader", [Out(Pointer(PDIRECT3DPIXELSHADER9), "ppShader")]),
-    Method(HRESULT, "SetPixelShaderConstantF", [(UINT, "StartRegister"), (ConstPointer(Float), "pConstantData"), (UINT, "Vector4fCount")]),
-    Method(HRESULT, "GetPixelShaderConstantF", [(UINT, "StartRegister"), Out(Pointer(Float), "pConstantData"), (UINT, "Vector4fCount")]),
-    Method(HRESULT, "SetPixelShaderConstantI", [(UINT, "StartRegister"), (ConstPointer(Int), "pConstantData"), (UINT, "Vector4iCount")]),
-    Method(HRESULT, "GetPixelShaderConstantI", [(UINT, "StartRegister"), Out(Pointer(Int), "pConstantData"), (UINT, "Vector4iCount")]),
-    Method(HRESULT, "SetPixelShaderConstantB", [(UINT, "StartRegister"), (ConstPointer(BOOL), "pConstantData"), (UINT, "BoolCount")]),
-    Method(HRESULT, "GetPixelShaderConstantB", [(UINT, "StartRegister"), Out(Pointer(BOOL), "pConstantData"), (UINT, "BoolCount")]),
+    Method(HRESULT, "SetPixelShaderConstantF", [(UINT, "StartRegister"), (Const(Array(Float, "4*Vector4fCount")), "pConstantData"), (UINT, "Vector4fCount")]),
+    Method(HRESULT, "GetPixelShaderConstantF", [(UINT, "StartRegister"), Out(Array(Float, "4*Vector4fCount"), "pConstantData"), (UINT, "Vector4fCount")]),
+    Method(HRESULT, "SetPixelShaderConstantI", [(UINT, "StartRegister"), (Const(Array(Int, "4*Vector4iCount")), "pConstantData"), (UINT, "Vector4iCount")]),
+    Method(HRESULT, "GetPixelShaderConstantI", [(UINT, "StartRegister"), Out(Array(Int, "4*Vector4iCount"), "pConstantData"), (UINT, "Vector4iCount")]),
+    Method(HRESULT, "SetPixelShaderConstantB", [(UINT, "StartRegister"), (Const(Array(BOOL, "BoolCount")), "pConstantData"), (UINT, "BoolCount")]),
+    Method(HRESULT, "GetPixelShaderConstantB", [(UINT, "StartRegister"), Out(Array(BOOL, "BoolCount"), "pConstantData"), (UINT, "BoolCount")]),
     Method(HRESULT, "DrawRectPatch", [(UINT, "Handle"), (ConstPointer(Float), "pNumSegs"), (ConstPointer(D3DRECTPATCH_INFO), "pRectPatchInfo")]),
     Method(HRESULT, "DrawTriPatch", [(UINT, "Handle"), (ConstPointer(Float), "pNumSegs"), (ConstPointer(D3DTRIPATCH_INFO), "pTriPatchInfo")]),
     Method(HRESULT, "DeletePatch", [(UINT, "Handle")]),
@@ -261,11 +307,11 @@ IDirect3DSwapChain9.methods += [
 
 IDirect3DResource9.methods += [
     Method(HRESULT, "GetDevice", [Out(Pointer(PDIRECT3DDEVICE9), "ppDevice")]),
-    Method(HRESULT, "SetPrivateData", [(REFGUID, "refguid"), (OpaquePointer(Const(Void)), "pData"), (DWORD, "SizeOfData"), (DWORD, "Flags")]),
+    Method(HRESULT, "SetPrivateData", [(REFGUID, "refguid"), (OpaquePointer(Const(Void)), "pData"), (DWORD, "SizeOfData"), (D3DSPD, "Flags")]),
     Method(HRESULT, "GetPrivateData", [(REFGUID, "refguid"), Out(OpaquePointer(Void), "pData"), Out(Pointer(DWORD), "pSizeOfData")]),
     Method(HRESULT, "FreePrivateData", [(REFGUID, "refguid")]),
-    Method(DWORD, "SetPriority", [(DWORD, "PriorityNew")]),
-    Method(DWORD, "GetPriority", []),
+    Method(D3D9_RESOURCE_PRIORITY, "SetPriority", [(D3D9_RESOURCE_PRIORITY, "PriorityNew")]),
+    Method(D3D9_RESOURCE_PRIORITY, "GetPriority", []),
     Method(Void, "PreLoad", []),
     Method(D3DRESOURCETYPE, "GetType", []),
 ]
@@ -341,7 +387,7 @@ IDirect3DSurface9.methods += [
 
 IDirect3DVolume9.methods += [
     Method(HRESULT, "GetDevice", [Out(Pointer(PDIRECT3DDEVICE9), "ppDevice")]),
-    Method(HRESULT, "SetPrivateData", [(REFGUID, "refguid"), (OpaquePointer(Const(Void)), "pData"), (DWORD, "SizeOfData"), (DWORD, "Flags")]),
+    Method(HRESULT, "SetPrivateData", [(REFGUID, "refguid"), (OpaquePointer(Const(Void)), "pData"), (DWORD, "SizeOfData"), (D3DSPD, "Flags")]),
     Method(HRESULT, "GetPrivateData", [(REFGUID, "refguid"), Out(OpaquePointer(Void), "pData"), Out(Pointer(DWORD), "pSizeOfData")]),
     Method(HRESULT, "FreePrivateData", [(REFGUID, "refguid")]),
     Method(HRESULT, "GetContainer", [(REFIID, "riid"), Out(Pointer(OpaquePointer(Void)), "ppContainer")]),
@@ -354,26 +400,26 @@ IDirect3DQuery9.methods += [
     Method(HRESULT, "GetDevice", [Out(Pointer(PDIRECT3DDEVICE9), "ppDevice")]),
     Method(D3DQUERYTYPE, "GetType", []),
     Method(DWORD, "GetDataSize", []),
-    Method(HRESULT, "Issue", [(DWORD, "dwIssueFlags")]),
-    Method(HRESULT, "GetData", [Out(OpaquePointer(Void), "pData"), (DWORD, "dwSize"), (DWORD, "dwGetDataFlags")]),
+    Method(HRESULT, "Issue", [(D3DISSUE, "dwIssueFlags")]),
+    Method(HRESULT, "GetData", [Out(OpaquePointer(Void), "pData"), (DWORD, "dwSize"), (D3DGETDATA, "dwGetDataFlags")]),
 ]
 
 IDirect3D9Ex.methods += [
     Method(UINT, "GetAdapterModeCountEx", [(UINT, "Adapter"), (ConstPointer(D3DDISPLAYMODEFILTER), "pFilter") ]),
     Method(HRESULT, "EnumAdapterModesEx", [(UINT, "Adapter"), (ConstPointer(D3DDISPLAYMODEFILTER), "pFilter"), (UINT, "Mode"), Out(Pointer(D3DDISPLAYMODEEX), "pMode")]),
     Method(HRESULT, "GetAdapterDisplayModeEx", [(UINT, "Adapter"), Out(Pointer(D3DDISPLAYMODEEX), "pMode"), Out(Pointer(D3DDISPLAYROTATION), "pRotation")]),
-    Method(HRESULT, "CreateDeviceEx", [(UINT, "Adapter"), (D3DDEVTYPE, "DeviceType"), (HWND, "hFocusWindow"), (DWORD, "BehaviorFlags"), Out(Pointer(D3DPRESENT_PARAMETERS), "pPresentationParameters"), Out(Pointer(D3DDISPLAYMODEEX), "pFullscreenDisplayMode"), Out(Pointer(PDIRECT3DDEVICE9EX), "ppReturnedDeviceInterface")]),
+    Method(HRESULT, "CreateDeviceEx", [(UINT, "Adapter"), (D3DDEVTYPE, "DeviceType"), (HWND, "hFocusWindow"), (D3DCREATE, "BehaviorFlags"), Out(Pointer(D3DPRESENT_PARAMETERS), "pPresentationParameters"), Out(Pointer(D3DDISPLAYMODEEX), "pFullscreenDisplayMode"), Out(Pointer(PDIRECT3DDEVICE9EX), "ppReturnedDeviceInterface")]),
     Method(HRESULT, "GetAdapterLUID", [(UINT, "Adapter"), Out(Pointer(LUID), "pLUID")]),
 ]
 
 IDirect3DDevice9Ex.methods += [
-    Method(HRESULT, "SetConvolutionMonoKernel", [(UINT, "width"), (UINT, "height"), Out(Pointer(Float), "rows"), Out(Pointer(Float), "columns")]),
+    Method(HRESULT, "SetConvolutionMonoKernel", [(UINT, "width"), (UINT, "height"), (Array(Float, "width"), "rows"), (Array(Float, "height"), "columns")]),
     Method(HRESULT, "ComposeRects", [(PDIRECT3DSURFACE9, "pSrc"), (PDIRECT3DSURFACE9, "pDst"), (PDIRECT3DVERTEXBUFFER9, "pSrcRectDescs"), (UINT, "NumRects"), (PDIRECT3DVERTEXBUFFER9, "pDstRectDescs"), (D3DCOMPOSERECTSOP, "Operation"), (Int, "Xoffset"), (Int, "Yoffset")]),
-    Method(HRESULT, "PresentEx", [(ConstPointer(RECT), "pSourceRect"), (ConstPointer(RECT), "pDestRect"), (HWND, "hDestWindowOverride"), (ConstPointer(RGNDATA), "pDirtyRegion"), (DWORD, "dwFlags")]),
+    Method(HRESULT, "PresentEx", [(ConstPointer(RECT), "pSourceRect"), (ConstPointer(RECT), "pDestRect"), (HWND, "hDestWindowOverride"), (ConstPointer(RGNDATA), "pDirtyRegion"), (D3DPRESENT, "dwFlags")]),
     Method(HRESULT, "GetGPUThreadPriority", [Out(Pointer(INT), "pPriority")]),
     Method(HRESULT, "SetGPUThreadPriority", [(INT, "Priority")]),
     Method(HRESULT, "WaitForVBlank", [(UINT, "iSwapChain")]),
-    Method(HRESULT, "CheckResourceResidency", [Out(Pointer(PDIRECT3DRESOURCE9), "pResourceArray"), (UINT32, "NumResources")]),
+    Method(HRESULT, "CheckResourceResidency", [(Array(PDIRECT3DRESOURCE9, "NumResources"), "pResourceArray"), (UINT32, "NumResources")]),
     Method(HRESULT, "SetMaximumFrameLatency", [(UINT, "MaxLatency")]),
     Method(HRESULT, "GetMaximumFrameLatency", [Out(Pointer(UINT), "pMaxLatency")]),
     Method(HRESULT, "CheckDeviceState", [(HWND, "hDestinationWindow")]),
@@ -396,29 +442,31 @@ d3d9.add_functions([
     StdFunction(HRESULT, "Direct3DCreate9Ex", [(UINT, "SDKVersion"), Out(Pointer(PDIRECT3D9EX), "ppD3D")], fail='D3DERR_NOTAVAILABLE'),
     StdFunction(Int, "D3DPERF_BeginEvent", [(D3DCOLOR, "col"), (LPCWSTR, "wszName")], fail='-1'),
     StdFunction(Int, "D3DPERF_EndEvent", [], fail='-1'),
-    StdFunction(Void, "D3DPERF_SetMarker", [(D3DCOLOR, "col"), (LPCWSTR, "wszName")], fail=''),
-    StdFunction(Void, "D3DPERF_SetRegion", [(D3DCOLOR, "col"), (LPCWSTR, "wszName")], fail=''),
+    StdFunction(Void, "D3DPERF_SetMarker", [(D3DCOLOR, "col"), (LPCWSTR, "wszName")]),
+    StdFunction(Void, "D3DPERF_SetRegion", [(D3DCOLOR, "col"), (LPCWSTR, "wszName")]),
     StdFunction(BOOL, "D3DPERF_QueryRepeatFrame", [], fail='FALSE'),
-    StdFunction(Void, "D3DPERF_SetOptions", [(DWORD, "dwOptions")], fail=''),
+    StdFunction(Void, "D3DPERF_SetOptions", [(DWORD, "dwOptions")]),
     StdFunction(DWORD, "D3DPERF_GetStatus", [], fail='0'),
 ])
 
 
 class D3D9Tracer(DllTracer):
 
-    pass
+    def dump_arg_instance(self, function, arg):
+        # Dump shaders as strings
+        if function.name in ('CreateVertexShader', 'CreatePixelShader') and arg.name == 'pFunction':
+            print '    DumpShader(__writer, %s);' % (arg.name)
+            return
 
+        DllTracer.dump_arg_instance(self, function, arg)
 
 
 if __name__ == '__main__':
-    print '#include <windows.h>'
-    print '#include <tchar.h>'
+    print '#include "trace_writer.hpp"'
+    print '#include "os.hpp"'
     print
-    print '#include "compat.h"'
-    print
-    print '#include <d3d9.h>'
-    print
-    print '#include "trace_write.hpp"'
+    print '#include "d3d9imports.hpp"'
+    print '#include "d3dshader.hpp"'
     print
     tracer = D3D9Tracer('d3d9.dll')
     tracer.trace_api(d3d9)
