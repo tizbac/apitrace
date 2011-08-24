@@ -41,6 +41,7 @@ class Parser
 {
 protected:
     void *file;
+    FILE *time_file;
 
     typedef std::list<Call *> CallList;
     CallList calls;
@@ -110,6 +111,8 @@ protected:
     unsigned long long read_uint(void);
 
     inline int read_byte(void);
+
+    void read_time(double *cpu_time, double *gpu_time);
 };
 
 

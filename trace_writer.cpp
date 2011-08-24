@@ -311,6 +311,7 @@ LocalWriter::open(void) {
 
     const char *szExtension = "trace";
     char szFileName[PATH_MAX];
+    char TimeFileName[PATH_MAX];
     const char *lpFileName;
 
     lpFileName = getenv("TRACE_FILE");
@@ -344,6 +345,41 @@ LocalWriter::open(void) {
     OS::DebugMessage("apitrace: tracing to %s\n", szFileName);
 
     Writer::open(szFileName);
+
+    // Open another file to log the cpu and gpu time
+    //
+    // The reason why to open another file to log the CPU and GPU time is
+    // that the GPU time is got asynchronously, which means you can NOT get
+    // the GPU time immediately after tracing the corresponding function.
+    // Instead, we put the GPU time query in glXSwapBuffer, the last call
+    // in a frame to reduce the query overhead.
+    //
+    // Thus, the tracedump(or even, qapitrace) side, they don't know where
+    // the time value stored, which means it's hard for them to dump the
+    // time info while dumping functions's info.
+    //
+    // Then, here comes a solustion simply doesn't break the old trace format:
+    // open another file to log the time info, while tracedump(or qapitrace)
+    // dump the function, it tries to read an entry(with a order of cpu_time
+    // and gpu time). If found, the tracedump will show the time info in the
+    // following way:
+    //
+    //    call_no function_name(...args...) = ret_value { cpu time: xxx gpu time: xxx }
+    //
+    strcpy(TimeFileName, szFileName);
+    strcat(TimeFileName, ".time");
+    time_file = fopen(TimeFileName, "w");
+    if (time_file)
+        OS::DebugMessage("apitrace: tracing time to %s\n", TimeFileName);
+
+ }
+ 
+void
+LocalWriter::writeTime(struct write_time *tm) {
+    if (time_file == NULL)
+        return;
+
+    fwrite(tm, sizeof(*tm), 1, time_file);
 }
 
 unsigned LocalWriter::beginEnter(const FunctionSig *sig) {

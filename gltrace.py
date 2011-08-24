@@ -463,6 +463,8 @@ class GlTracer(Tracer):
             print '        GLint size = 0;'
             print '        GLenum type = 0;'
             print '        GLchar name[256];'
+            print '        gpu_queries[query_index] = cpu_time[query_index] = 0;'
+            print '        query_index++;'
             # TODO: Use ACTIVE_ATTRIBUTE_MAX_LENGTH instead of 256
             print '        __glGetActiveAttrib(program, attrib, sizeof name, NULL, &size, &type, name);'
             print "        if (name[0] != 'g' || name[1] != 'l' || name[2] != '_') {"
@@ -481,6 +483,8 @@ class GlTracer(Tracer):
             print '        GLint size = 0;'
             print '        GLenum type = 0;'
             print '        GLcharARB name[256];'
+            print '        gpu_queries[query_index] = cpu_time[query_index] = 0;'
+            print '        query_index++;'
             # TODO: Use ACTIVE_ATTRIBUTE_MAX_LENGTH instead of 256
             print '        __glGetActiveAttribARB(programObj, attrib, sizeof name, NULL, &size, &type, name);'
             print "        if (name[0] != 'g' || name[1] != 'l' || name[2] != '_') {"
@@ -536,6 +540,8 @@ class GlTracer(Tracer):
         print '        __writer.endEnter();'
         print '        __writer.beginLeave(__call);'
         print '        __writer.endLeave();'
+	print '        gpu_queries[query_index] = cpu_time[query_index] = 0;'
+	print '        query_index++;'
        
     buffer_targets = [
         'ARRAY_BUFFER',
@@ -731,6 +737,8 @@ class GlTracer(Tracer):
             print '            __writer.endEnter();'
             print '            __writer.beginLeave(__call);'
             print '            __writer.endLeave();'
+            print '            gpu_queries[query_index] = cpu_time[query_index] = 0;'
+            print '            query_index++;'
             print '        }'
             print '    }'
             self.array_epilog(api, uppercase_name)
@@ -804,6 +812,8 @@ class GlTracer(Tracer):
             print '                    __writer.endEnter();'
             print '                    __writer.beginLeave(__call);'
             print '                    __writer.endLeave();'
+            print '                   gpu_queries[query_index] = cpu_time[query_index] = 0;'
+            print '                   query_index++;'
             print '                }'
             print '            }'
             print '        }'

@@ -24,6 +24,7 @@
  **************************************************************************/
 
 
+#include <iomanip>
 #include "formatter.hpp"
 #include "trace_model.hpp"
 
@@ -329,6 +330,14 @@ public:
             os << " = ";
             _visit(call->ret);
         }
+
+	// print out the time just when cpu time bigger than 0.005 ms or has gpu time
+	if (call->cpu_time > 5 || call->gpu_time > 0) {
+		os << "  { cpu time: " << std::setprecision(3) << call->cpu_time / 1000 << "ms";
+		if (call->gpu_time > 0)
+			os << ", gpu time: " << std::setprecision(3) << call->gpu_time / 1000 << "ms";
+		os << "}";
+	}
         os << "\n";
     }
 };

@@ -47,6 +47,24 @@ class GlxTracer(GlTracer):
         # Take snapshots
         if function.name == 'glXSwapBuffers':
             print '    glsnapshot::snapshot(__call);'
+	    print '    Trace::LocalWriter::write_time tm;'
+	    print '    if (last_gpu_query > 0) {'
+	    print '        int done = 0;'
+	    print '        while (!done)'
+	    print '            __glGetQueryObjectiv(last_gpu_query, GL_QUERY_RESULT_AVAILABLE, &done);'
+	    print '    }'
+	    print '    for (int i = 0; i < query_index; i++) {'
+	    print '        GLuint gpu_time;'
+	    print '        if (gpu_queries[i]) {'
+	    print '            __glGetQueryObjectuiv(gpu_queries[i], GL_QUERY_RESULT, &gpu_time);'
+	    print '            __glDeleteQueries(1, &gpu_queries[i]);'
+	    print '        } else'
+	    print '            gpu_time = 0;'
+	    print '        tm.cpu_time = cpu_time[i];'
+	    print '        tm.gpu_time = gpu_time / 1000.0;'
+	    print '        __writer.writeTime(&tm);'
+	    print '   }'
+	    print '   query_index = 0;'
         if function.name in ('glFinish', 'glFlush'):
             print '    GLint __draw_framebuffer = 0;'
             print '    __glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &__draw_framebuffer);'
@@ -84,6 +102,15 @@ if __name__ == '__main__':
     print '#include "glproc.hpp"'
     print '#include "glsize.hpp"'
     print '#include "glsnapshot.hpp"'
+    print
+    print '#include <sys/time.h>'
+    print
+    print '// I hope this would be enough'
+    print '#define MAX_QUERIES		8192'
+    print 'static GLuint gpu_queries[MAX_QUERIES];'
+    print 'static double cpu_time[MAX_QUERIES];'
+    print 'static int query_index = 0;'
+    print 'static int last_gpu_query = 0;'
     print
     print 'static __GLXextFuncPtr __unwrap_proc_addr(const GLubyte * procName, __GLXextFuncPtr procPtr);'
     print

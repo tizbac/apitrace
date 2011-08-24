@@ -347,13 +347,30 @@ class Tracer:
         print
 
     def trace_function_impl_body(self, function):
+        print '    long long t0, t1;'
         print '    unsigned __call = __writer.beginEnter(&__%s_sig);' % (function.name,)
         for arg in function.args:
             if not arg.output:
                 self.unwrap_arg(function, arg)
                 self.dump_arg(function, arg)
         print '    __writer.endEnter();'
+	print '    if (query_index < MAX_QUERIES) {'
+	if function.loggputime:
+	    print '        __glGenQueries(1, &gpu_queries[query_index]);'
+	    print '        __glBeginQuery(GL_TIME_ELAPSED, gpu_queries[query_index]);'
+	    print '        last_gpu_query = gpu_queries[query_index];'
+	else:
+	    print '        gpu_queries[query_index] = 0;'
+	print '        t0 = OS::GetTime();'
+	print '    }'
         self.dispatch_function(function)
+	print '    if (query_index < MAX_QUERIES) {'
+	print '        t1 = OS::GetTime();'
+	if function.loggputime:
+	    print '        __glEndQuery(GL_TIME_ELAPSED);'
+	print '        cpu_time[query_index] = (double)(t1 - t0);'
+	print '        query_index++;'
+	print '    }'
         print '    __writer.beginLeave(__call);'
         for arg in function.args:
             if arg.output:

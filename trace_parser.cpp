@@ -27,9 +27,11 @@
 
 #include <assert.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include <zlib.h>
 
+#include "os.hpp"
 #include "trace_parser.hpp"
 
 
@@ -52,6 +54,7 @@ Parser::~Parser() {
 
 
 bool Parser::open(const char *filename) {
+    char TimeFile[PATH_MAX];
     file = gzopen(filename, "rb");
     if (!file) {
         return false;
@@ -62,6 +65,10 @@ bool Parser::open(const char *filename) {
         std::cerr << "error: unsupported trace format version " << version << "\n";
         return false;
     }
+
+    strcpy(TimeFile, filename);
+    strcat(TimeFile, ".time");
+    time_file = fopen(TimeFile, "r");
 
     return true;
 }
@@ -98,6 +105,7 @@ void Parser::close(void) {
 
 
 Call *Parser::parse_call(void) {
+    Call *ret;
     do {
         int c = read_byte();
         switch(c) {
@@ -105,7 +113,9 @@ Call *Parser::parse_call(void) {
             parse_enter();
             break;
         case Trace::EVENT_LEAVE:
-            return parse_leave();
+            ret = parse_leave();
+            read_time(&ret->cpu_time, &ret->gpu_time);
+            return ret;
         default:
             std::cerr << "error: unknown event " << c << "\n";
             exit(1);
@@ -451,6 +461,17 @@ inline int Parser::read_byte(void) {
 #endif
     return c;
 }
+
+void Parser::read_time(double *cpu_time, double *gpu_time) {
+    if (time_file == NULL) {
+        *cpu_time = *gpu_time = -1;
+        return;
+    }
+    
+    fread(cpu_time, sizeof(double), 1, time_file);
+    fread(gpu_time, sizeof(double), 1, time_file);
+}
+
 
 
 } /* namespace Trace */

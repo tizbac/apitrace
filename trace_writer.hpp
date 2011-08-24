@@ -94,6 +94,7 @@ namespace Trace {
 
         void writeCall(Call *call);
 
+
     protected:
         void inline _write(const void *sBuffer, size_t dwBytesToWrite);
         void inline _writeByte(char c);
@@ -115,7 +116,15 @@ namespace Trace {
      */
     class LocalWriter : public Writer {
     protected:
+	FILE *time_file;	// Used to log CPU and GPU time
     public:
+	struct write_time {
+            double cpu_time;
+            double gpu_time;
+	};
+	void writeTime(struct write_time *tm);
+
+
         void open(void);
 
         unsigned beginEnter(const FunctionSig *sig);

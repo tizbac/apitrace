@@ -319,11 +319,15 @@ class Call
 {
 public:
     unsigned no;
+    double cpu_time;
+    double gpu_time;
     const FunctionSig *sig;
     std::vector<Value *> args;
     Value *ret;
 
-    Call(FunctionSig *_sig) : sig(_sig), args(_sig->num_args), ret(0) { }
+    Call(FunctionSig *_sig) : sig(_sig), args(_sig->num_args), ret(0){
+         cpu_time = gpu_time = -1.0;
+    }
     ~Call();
 
     inline const char * name(void) const {
