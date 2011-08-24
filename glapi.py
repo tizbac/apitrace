@@ -63,7 +63,7 @@ glapi.add_functions([
     GlFunction(Void, "glTexImage1D", [(GLenum, "target"), (GLint, "level"), (GLenum_int, "internalformat"), (GLsizei, "width"), (GLint, "border"), (GLenum, "format"), (GLenum, "type"), (Blob(Const(GLvoid), "__glTexImage1D_size(format, type, width)"), "pixels")]),
     GlFunction(Void, "glTexImage2D", [(GLenum, "target"), (GLint, "level"), (GLenum_int, "internalformat"), (GLsizei, "width"), (GLsizei, "height"), (GLint, "border"), (GLenum, "format"), (GLenum, "type"), (Blob(Const(GLvoid), "__glTexImage2D_size(format, type, width, height)"), "pixels")]),
     GlFunction(Void, "glDrawBuffer", [(GLenum, "mode")]),
-    GlFunction(Void, "glClear", [(GLbitfield_attrib, "mask")]),
+    GlFunction(Void, "glClear", [(GLbitfield_attrib, "mask")], loggputime=True),
     GlFunction(Void, "glClearColor", [(GLclampf, "red"), (GLclampf, "green"), (GLclampf, "blue"), (GLclampf, "alpha")]),
     GlFunction(Void, "glClearStencil", [(GLint, "s")]),
     GlFunction(Void, "glClearDepth", [(GLclampd, "depth")]),
@@ -360,7 +360,7 @@ glapi.add_functions([
 
     # GL_VERSION_1_1
     GlFunction(Void, "glDrawArrays", [(GLenum_mode, "mode"), (GLint, "first"), (GLsizei, "count")]),
-    GlFunction(Void, "glDrawElements", [(GLenum_mode, "mode"), (GLsizei, "count"), (GLenum, "type"), (OpaquePointer(Const(GLvoid)), "indices")]),
+    GlFunction(Void, "glDrawElements", [(GLenum_mode, "mode"), (GLsizei, "count"), (GLenum, "type"), (OpaquePointer(Const(GLvoid)), "indices")], loggputime=True),
     GlFunction(Void, "glGetPointerv", [(GLenum, "pname"), Out(Pointer(OpaquePointer(GLvoid)), "params")], sideeffects=False),
     GlFunction(Void, "glPolygonOffset", [(GLfloat, "factor"), (GLfloat, "units")]),
     GlFunction(Void, "glCopyTexImage1D", [(GLenum, "target"), (GLint, "level"), (GLenum, "internalformat"), (GLint, "x"), (GLint, "y"), (GLsizei, "width"), (GLint, "border")]),
