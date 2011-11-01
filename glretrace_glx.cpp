@@ -32,6 +32,13 @@
 using namespace glretrace;
 
 
+extern GLuint gpu_queries[];
+extern int last_gpu_query;
+extern int query_index;
+extern int last_query_index;
+extern double gpu_time[];
+
+
 typedef std::map<unsigned long, glws::Drawable *> DrawableMap;
 typedef std::map<unsigned long long, glws::Context *> ContextMap;
 static DrawableMap drawable_map;
@@ -128,6 +135,25 @@ static void retrace_glXSwapBuffers(trace::Call &call) {
     } else {
         glFlush();
     }
+
+    if (last_gpu_query > 0) {
+        GLint done = 0;
+        while (!done) {
+            __glGetQueryObjectiv(last_gpu_query, GL_QUERY_RESULT_AVAILABLE, &done);
+        }
+    }
+    for (int i = last_query_index; i < query_index; i++) {
+        GLuint time_gpu;
+        if (gpu_queries[i]) {
+            __glGetQueryObjectuiv(gpu_queries[i], GL_QUERY_RESULT, &time_gpu);
+            __glDeleteQueries(1, &gpu_queries[i]);
+        } else {
+            time_gpu = 0;
+        }
+        gpu_time[i] = time_gpu * 1.0E-6;
+    }
+    last_gpu_query = 0;
+    last_query_index = query_index;
 }
 
 static void retrace_glXCreateNewContext(trace::Call &call) {

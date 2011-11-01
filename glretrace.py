@@ -234,13 +234,39 @@ class GlRetracer(Retracer):
             # then just blit to the drawable without ever calling glViewport.
             print '    glretrace::updateDrawable(std::max(dstX0, dstX1), std::max(dstY0, dstY1));'
 
+        loggputime = (
+            function.name in self.draw_array_function_names or
+            function.name in self.draw_elements_function_names or
+            function.name in self.draw_indirect_function_names or
+            function.name in self.misc_draw_function_names
+        )
+
         if function.name == "glEnd":
             print '    glretrace::insideGlBeginEnd = false;'
 
         if function.name == 'memcpy':
             print '    if (!dest || !src || !n) return;'
-        
+
+        print '    long long t0, t1;'
+        print '    if (query_index < MAX_QUERIES) {'
+        if loggputime:
+            print '        __glGenQueries(1, &gpu_queries[query_index]);'
+            print '        __glBeginQuery(GL_TIME_ELAPSED, gpu_queries[query_index]);'
+            print '        last_gpu_query = gpu_queries[query_index];'
+        else:
+            print '        gpu_queries[query_index] = 0;'
+        print '        t0 = os::getTime();'
+        print '    }'
+
         Retracer.call_function(self, function)
+
+        print '    if (query_index < MAX_QUERIES) {'
+        print '        t1 = os::getTime();'
+        if loggputime:
+            print '        __glEndQuery(GL_TIME_ELAPSED);'
+        print '        cpu_time[query_index] = (double)(t1 - t0) * 1.0E-3;'
+        print '        query_index++;'
+        print '    }'
 
         # Error checking
         if function.name == "glBegin":
@@ -393,6 +419,13 @@ if __name__ == '__main__':
 #include "glstate.hpp"
 
 
+#define MAX_QUERIES  18192
+GLuint gpu_queries[MAX_QUERIES];
+int last_gpu_query = 0;
+int query_index = 0;
+int last_query_index = 0;
+double cpu_time[MAX_QUERIES];
+double gpu_time[MAX_QUERIES];
 '''
     api = glapi.glapi
     retracer = GlRetracer()

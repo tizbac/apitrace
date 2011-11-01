@@ -34,6 +34,11 @@
 #include "glretrace.hpp"
 
 
+extern double cpu_time[];
+extern double gpu_time[];
+extern int query_index;
+
+
 namespace glretrace {
 
 bool double_buffer = true;
@@ -219,8 +224,9 @@ static void display(void) {
         delete call;
     }
 
-    // Reached the end of trace
-    glFlush();
+    // Reached the end of trace.
+    // Call glFinish() to complete the execution of previous GL calls.
+    glFinish();
 
     long long endTime = os::getTime();
     float timeInterval = (endTime - startTime) * 1.0E-6;
@@ -234,11 +240,38 @@ static void display(void) {
 
     if (wait) {
         while (glws::processEvents()) {}
-    } else {
-        exit(0);
     }
 }
 
+static void reparser(void) {
+    trace::Call *call;
+    FILE *timefile = fopen("time.log", "w+");
+    int i = 0;
+    fprintf(timefile, "Call#\t\t  Function Name\t\tCPU Time\t\t\tGPU Time\n");
+    while ((call = parser.parse_call()) &&
+           (i <= query_index)) {
+        if (!(call->name()[0] == 'g' && call->name()[1] == 'l' && call->name()[2] == 'X') &&
+            !(call->name()[2] == 'G' && call->name()[3] == 'e' && call->name()[4] == 't')) {
+            fprintf(timefile, "%5d\t\t", call->no);
+            fprintf(timefile, "%15s\t\t", call->name());
+            // Minimum cpu time logging can be set appropriately
+            if (cpu_time[i] > 0.001 || gpu_time[i]) {
+                fprintf(timefile, "cpu time = %4.4f  ms\t\t", cpu_time[i]);
+            }
+            if (gpu_time[i]) {
+                fprintf(timefile, "gpu time = %4.4f  ms", gpu_time[i]);
+            }
+            fprintf(timefile, "\n");
+            i++;
+        }
+        delete call;
+    }
+    if (timefile != NULL) {
+        fclose(timefile);
+        std::cout << "Refer to time.log file for timing information\n";
+    }
+    exit(0);
+}
 
 static void usage(void) {
     std::cout << 
@@ -337,7 +370,20 @@ int main(int argc, char **argv)
 
         parser.close();
     }
-    
+
+    // Reparsing is required to dump a logfile containing cpu time and gpu time
+    // for each gl call. As gpu time for a gl call is available only at the end
+    // of a frame, It's really difficult to write gpu time when parsing for the
+    // first time.  It is an overhead but doesn't effect the cpu or gpu time in
+    // anyway.  logging of gpu time can be enabled or disabled by setting a
+    // flag in specs/glapi.py
+    if (!parser.open(argv[1])) {
+        std::cerr << "error: failed to open " << argv[i] << "\n";
+        return 1;
+    }
+    reparser();
+    parser.close();
+
     delete visual;
     glws::cleanup();
 
