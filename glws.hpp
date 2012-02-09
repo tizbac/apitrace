@@ -31,7 +31,55 @@
 #define _GLWS_HPP_
 
 
+#include <vector>
+
+
 namespace glws {
+
+
+enum Profile {
+    PROFILE_COMPAT = 0,
+    PROFILE_CORE,
+    PROFILE_ES1,
+    PROFILE_ES2,
+    PROFILE_MAX
+};
+
+
+extern bool debug;
+
+
+bool
+checkExtension(const char *extName, const char *extString);
+
+
+template< class T >
+class Attributes {
+protected:
+    std::vector<T> attribs;
+
+public:
+    void add(T param) {
+        attribs.push_back(param);
+    }
+
+    void add(T pname, T pvalue) {
+        add(pname);
+        add(pvalue);
+    }
+
+    void end(T terminator = 0) {
+        add(terminator);
+    }
+
+    operator T * (void) {
+        return &attribs[0];
+    }
+
+    operator const T * (void) const {
+        return &attribs[0];
+    }
+};
 
 
 class Visual
@@ -83,38 +131,37 @@ class Context
 {
 public:
     const Visual *visual;
+    Profile profile;
     
-    Context(const Visual *vis) :
-        visual(vis)
+    Context(const Visual *vis, Profile prof) :
+        visual(vis),
+        profile(prof)
     {}
 
     virtual ~Context() {}
 };
 
 
-class WindowSystem
-{
-public:
-    virtual ~WindowSystem() {}
+void
+init(void);
 
-    virtual Visual *
-    createVisual(bool doubleBuffer = false) = 0;
-    
-    virtual Drawable *
-    createDrawable(const Visual *visual, int width = 32, int height = 32) = 0;
+void
+cleanup(void);
 
-    virtual Context *
-    createContext(const Visual *visual, Context *shareContext = NULL) = 0;
-    
-    virtual bool
-    makeCurrent(Drawable *drawable, Context *context) = 0;
+Visual *
+createVisual(bool doubleBuffer = false, Profile profile = PROFILE_COMPAT);
 
-    virtual bool
-    processEvents(void) = 0;
-};
+Drawable *
+createDrawable(const Visual *visual, int width = 32, int height = 32);
 
+Context *
+createContext(const Visual *visual, Context *shareContext = 0, Profile profile = PROFILE_COMPAT);
 
-WindowSystem *createNativeWindowSystem(void);
+bool
+makeCurrent(Drawable *drawable, Context *context);
+
+bool
+processEvents(void);
 
 
 } /* namespace glws */

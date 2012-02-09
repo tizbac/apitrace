@@ -12,7 +12,6 @@ set(qapitrace_SRCS
    glsledit.cpp
    imageviewer.cpp
    jumpwidget.cpp
-   loaderthread.cpp
    mainwindow.cpp
    main.cpp
    retracer.cpp
@@ -21,6 +20,7 @@ set(qapitrace_SRCS
    settingsdialog.cpp
    shaderssourcewidget.cpp
    tracedialog.cpp
+   traceloader.cpp
    traceprocess.cpp
    vertexdatainterpreter.cpp
  )
@@ -47,11 +47,9 @@ QT4_WRAP_UI(qapitrace_UIS_H ${qapitrace_UIS})
 link_directories(${LINK_DIRECTORIES} ${QJSON_LIBRARY_DIRS})
 include_directories(${QT_INCLUDES} ${QJSON_INCLUDE_DIR} ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/..)
 
-add_definitions(-DBUILD_DIR="${CMAKE_BINARY_DIR}")
-
 add_executable(qapitrace ${qapitrace_SRCS} ${qapitrace_UIS_H})
 
-target_link_libraries(qapitrace trace ${QJSON_LIBRARIES} ${QT_LIBRARIES} )
+target_link_libraries(qapitrace common ${QJSON_LIBRARIES} ${QT_LIBRARIES} )
 
 ########### install files ###############
 

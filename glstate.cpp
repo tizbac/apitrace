@@ -25,8 +25,11 @@
 
 
 #include <string.h>
-#include <iostream>
+
 #include <algorithm>
+#include <iostream>
+#include <map>
+#include <sstream>
 
 #include "image.hpp"
 #include "json.hpp"
@@ -76,8 +79,13 @@ restorePixelPackState(void) {
 }
 
 
+// Mapping from shader type to shader source, used to accumulated the sources
+// of different shaders with same type.
+typedef std::map<std::string, std::string> ShaderMap;
+
+
 static void
-dumpShader(JSONWriter &json, GLuint shader)
+getShaderSource(ShaderMap &shaderMap, GLuint shader)
 {
     if (!shader) {
         return;
@@ -100,23 +108,27 @@ dumpShader(JSONWriter &json, GLuint shader)
     source[0] = 0;
     glGetShaderSource(shader, source_length, &length, source);
 
-    json.beginMember(enumToString(shader_type));
-    json.writeString(source);
-    json.endMember();
+    shaderMap[enumToString(shader_type)] += source;
 
     delete [] source;
 }
 
 
 static void
-dumpShaderObj(JSONWriter &json, GLhandleARB shaderObj)
+getShaderObjSource(ShaderMap &shaderMap, GLhandleARB shaderObj)
 {
     if (!shaderObj) {
         return;
     }
 
+    GLint object_type = 0;
+    glGetObjectParameterivARB(shaderObj, GL_OBJECT_TYPE_ARB, &object_type);
+    if (object_type != GL_SHADER_OBJECT_ARB) {
+        return;
+    }
+
     GLint shader_type = 0;
-    glGetObjectParameterivARB(shaderObj, GL_OBJECT_TYPE_ARB, &shader_type);
+    glGetObjectParameterivARB(shaderObj, GL_OBJECT_SUBTYPE_ARB, &shader_type);
     if (!shader_type) {
         return;
     }
@@ -132,60 +144,300 @@ dumpShaderObj(JSONWriter &json, GLhandleARB shaderObj)
     source[0] = 0;
     glGetShaderSource(shaderObj, source_length, &length, source);
 
-    json.beginMember(enumToString(shader_type));
-    json.writeString(source);
-    json.endMember();
+    shaderMap[enumToString(shader_type)] += source;
 
     delete [] source;
 }
 
 
 static inline void
-dumpCurrentProgram(JSONWriter &json)
+dumpProgram(JSONWriter &json, GLint program)
 {
-    GLint program = 0;
-    glGetIntegerv(GL_CURRENT_PROGRAM, &program);
-    if (!program) {
-        return;
-    }
-
     GLint attached_shaders = 0;
     glGetProgramiv(program, GL_ATTACHED_SHADERS, &attached_shaders);
     if (!attached_shaders) {
         return;
     }
 
+    ShaderMap shaderMap;
+
     GLuint *shaders = new GLuint[attached_shaders];
     GLsizei count = 0;
     glGetAttachedShaders(program, attached_shaders, &count, shaders);
+    std::sort(shaders, shaders + count);
     for (GLsizei i = 0; i < count; ++ i) {
-       dumpShader(json, shaders[i]);
+       getShaderSource(shaderMap, shaders[i]);
     }
     delete [] shaders;
+
+    for (ShaderMap::const_iterator it = shaderMap.begin(); it != shaderMap.end(); ++it) {
+        json.beginMember(it->first);
+        json.writeString(it->second);
+        json.endMember();
+    }
 }
 
 
 static inline void
-dumpCurrentProgramObj(JSONWriter &json)
+dumpProgramObj(JSONWriter &json, GLhandleARB programObj)
 {
-    GLhandleARB programObj = glGetHandleARB(GL_PROGRAM_OBJECT_ARB);
-    if (!programObj) {
-        return;
-    }
-
     GLint attached_shaders = 0;
-    glGetProgramivARB(programObj, GL_OBJECT_ATTACHED_OBJECTS_ARB, &attached_shaders);
+    glGetObjectParameterivARB(programObj, GL_OBJECT_ATTACHED_OBJECTS_ARB, &attached_shaders);
     if (!attached_shaders) {
         return;
     }
 
+    ShaderMap shaderMap;
+
     GLhandleARB *shaderObjs = new GLhandleARB[attached_shaders];
     GLsizei count = 0;
     glGetAttachedObjectsARB(programObj, attached_shaders, &count, shaderObjs);
+    std::sort(shaderObjs, shaderObjs + count);
     for (GLsizei i = 0; i < count; ++ i) {
-       dumpShaderObj(json, shaderObjs[i]);
+       getShaderObjSource(shaderMap, shaderObjs[i]);
     }
     delete [] shaderObjs;
+
+    for (ShaderMap::const_iterator it = shaderMap.begin(); it != shaderMap.end(); ++it) {
+        json.beginMember(it->first);
+        json.writeString(it->second);
+        json.endMember();
+    }
+}
+
+/*
+ * When fetching the uniform name of an array we usually get name[0]
+ * so we need to cut the trailing "[0]" in order to properly construct
+ * array names later. Otherwise we endup with stuff like
+ * uniformArray[0][0],
+ * uniformArray[0][1],
+ * instead of
+ * uniformArray[0],
+ * uniformArray[1].
+ */
+static std::string
+resolveUniformName(const GLchar *name,  GLint size)
+{
+    std::string qualifiedName(name);
+    if (size > 1) {
+        std::string::size_type nameLength = qualifiedName.length();
+        static const char * const arrayStart = "[0]";
+        static const int arrayStartLen = 3;
+        if (qualifiedName.rfind(arrayStart) == (nameLength - arrayStartLen)) {
+            qualifiedName = qualifiedName.substr(0, nameLength - 3);
+        }
+    }
+    return qualifiedName;
+}
+
+static void
+dumpUniform(JSONWriter &json, GLint program, GLint size, GLenum type, const GLchar *name) {
+    GLenum elemType;
+    GLint numElems;
+    __gl_uniform_size(type, elemType, numElems);
+    if (elemType == GL_NONE) {
+        return;
+    }
+
+    GLfloat fvalues[4*4];
+    GLdouble dvalues[4*4];
+    GLint ivalues[4*4];
+    GLuint uivalues[4*4];
+
+    GLint i, j;
+
+    std::string qualifiedName = resolveUniformName(name, size);
+
+    for (i = 0; i < size; ++i) {
+        std::stringstream ss;
+        ss << qualifiedName;
+
+        if (size > 1) {
+            ss << '[' << i << ']';
+        }
+
+        std::string elemName = ss.str();
+
+        json.beginMember(elemName);
+
+        GLint location = glGetUniformLocation(program, elemName.c_str());
+
+        if (numElems > 1) {
+            json.beginArray();
+        }
+
+        switch (elemType) {
+        case GL_FLOAT:
+            glGetUniformfv(program, location, fvalues);
+            for (j = 0; j < numElems; ++j) {
+                json.writeNumber(fvalues[j]);
+            }
+            break;
+        case GL_DOUBLE:
+            glGetUniformdv(program, location, dvalues);
+            for (j = 0; j < numElems; ++j) {
+                json.writeNumber(dvalues[j]);
+            }
+            break;
+        case GL_INT:
+            glGetUniformiv(program, location, ivalues);
+            for (j = 0; j < numElems; ++j) {
+                json.writeNumber(ivalues[j]);
+            }
+            break;
+        case GL_UNSIGNED_INT:
+            glGetUniformuiv(program, location, uivalues);
+            for (j = 0; j < numElems; ++j) {
+                json.writeNumber(uivalues[j]);
+            }
+            break;
+        case GL_BOOL:
+            glGetUniformiv(program, location, ivalues);
+            for (j = 0; j < numElems; ++j) {
+                json.writeBool(ivalues[j]);
+            }
+            break;
+        default:
+            assert(0);
+            break;
+        }
+
+        if (numElems > 1) {
+            json.endArray();
+        }
+
+        json.endMember();
+    }
+}
+
+
+static void
+dumpUniformARB(JSONWriter &json, GLhandleARB programObj, GLint size, GLenum type, const GLchar *name) {
+
+    GLenum elemType;
+    GLint numElems;
+    __gl_uniform_size(type, elemType, numElems);
+    if (elemType == GL_NONE) {
+        return;
+    }
+
+    GLfloat fvalues[4*4];
+    GLint ivalues[4*4];
+
+    GLint i, j;
+
+    std::string qualifiedName = resolveUniformName(name, size);
+
+    for (i = 0; i < size; ++i) {
+        std::stringstream ss;
+        ss << qualifiedName;
+
+        if (size > 1) {
+            ss << '[' << i << ']';
+        }
+
+        std::string elemName = ss.str();
+
+        json.beginMember(elemName);
+
+        GLint location = glGetUniformLocationARB(programObj, elemName.c_str());
+
+        if (numElems > 1) {
+            json.beginArray();
+        }
+
+        switch (elemType) {
+        case GL_DOUBLE:
+            // glGetUniformdvARB does not exists
+        case GL_FLOAT:
+            glGetUniformfvARB(programObj, location, fvalues);
+            for (j = 0; j < numElems; ++j) {
+                json.writeNumber(fvalues[j]);
+            }
+            break;
+        case GL_UNSIGNED_INT:
+            // glGetUniformuivARB does not exists
+        case GL_INT:
+            glGetUniformivARB(programObj, location, ivalues);
+            for (j = 0; j < numElems; ++j) {
+                json.writeNumber(ivalues[j]);
+            }
+            break;
+        case GL_BOOL:
+            glGetUniformivARB(programObj, location, ivalues);
+            for (j = 0; j < numElems; ++j) {
+                json.writeBool(ivalues[j]);
+            }
+            break;
+        default:
+            assert(0);
+            break;
+        }
+
+        if (numElems > 1) {
+            json.endArray();
+        }
+
+        json.endMember();
+    }
+}
+
+
+static inline void
+dumpProgramUniforms(JSONWriter &json, GLint program)
+{
+    GLint active_uniforms = 0;
+    glGetProgramiv(program, GL_ACTIVE_UNIFORMS, &active_uniforms);
+    if (!active_uniforms) {
+        return;
+    }
+
+    GLint active_uniform_max_length = 0;
+    glGetProgramiv(program, GL_ACTIVE_UNIFORM_MAX_LENGTH, &active_uniform_max_length);
+    GLchar *name = new GLchar[active_uniform_max_length];
+    if (!name) {
+        return;
+    }
+
+    for (GLint index = 0; index < active_uniforms; ++index) {
+        GLsizei length = 0;
+        GLint size = 0;
+        GLenum type = GL_NONE;
+        glGetActiveUniform(program, index, active_uniform_max_length, &length, &size, &type, name);
+
+        dumpUniform(json, program, size, type, name);
+    }
+
+    delete [] name;
+}
+
+
+static inline void
+dumpProgramObjUniforms(JSONWriter &json, GLhandleARB programObj)
+{
+    GLint active_uniforms = 0;
+    glGetObjectParameterivARB(programObj, GL_OBJECT_ACTIVE_UNIFORMS_ARB, &active_uniforms);
+    if (!active_uniforms) {
+        return;
+    }
+
+    GLint active_uniform_max_length = 0;
+    glGetObjectParameterivARB(programObj, GL_OBJECT_ACTIVE_UNIFORM_MAX_LENGTH_ARB, &active_uniform_max_length);
+    GLchar *name = new GLchar[active_uniform_max_length];
+    if (!name) {
+        return;
+    }
+
+    for (GLint index = 0; index < active_uniforms; ++index) {
+        GLsizei length = 0;
+        GLint size = 0;
+        GLenum type = GL_NONE;
+        glGetActiveUniformARB(programObj, index, active_uniform_max_length, &length, &size, &type, name);
+
+        dumpUniformARB(json, programObj, size, type, name);
+    }
+
+    delete [] name;
 }
 
 
@@ -216,15 +468,99 @@ dumpArbProgram(JSONWriter &json, GLenum target)
 
 
 static inline void
-dumpShaders(JSONWriter &json)
+dumpArbProgramUniforms(JSONWriter &json, GLenum target, const char *prefix)
 {
+    if (!glIsEnabled(target)) {
+        return;
+    }
+
+    GLint program_parameters = 0;
+    glGetProgramivARB(target, GL_PROGRAM_PARAMETERS_ARB, &program_parameters);
+    if (!program_parameters) {
+        return;
+    }
+
+    GLint max_program_local_parameters = 0;
+    glGetProgramivARB(target, GL_MAX_PROGRAM_LOCAL_PARAMETERS_ARB, &max_program_local_parameters);
+    for (GLint index = 0; index < max_program_local_parameters; ++index) {
+        GLdouble params[4] = {0, 0, 0, 0};
+        glGetProgramLocalParameterdvARB(target, index, params);
+
+        if (!params[0] && !params[1] && !params[2] && !params[3]) {
+            continue;
+        }
+
+        char name[256];
+        snprintf(name, sizeof name, "%sprogram.local[%i]", prefix, index);
+
+        json.beginMember(name);
+        json.beginArray();
+        json.writeNumber(params[0]);
+        json.writeNumber(params[1]);
+        json.writeNumber(params[2]);
+        json.writeNumber(params[3]);
+        json.endArray();
+        json.endMember();
+    }
+
+    GLint max_program_env_parameters = 0;
+    glGetProgramivARB(target, GL_MAX_PROGRAM_ENV_PARAMETERS_ARB, &max_program_env_parameters);
+    for (GLint index = 0; index < max_program_env_parameters; ++index) {
+        GLdouble params[4] = {0, 0, 0, 0};
+        glGetProgramEnvParameterdvARB(target, index, params);
+
+        if (!params[0] && !params[1] && !params[2] && !params[3]) {
+            continue;
+        }
+
+        char name[256];
+        snprintf(name, sizeof name, "%sprogram.env[%i]", prefix, index);
+
+        json.beginMember(name);
+        json.beginArray();
+        json.writeNumber(params[0]);
+        json.writeNumber(params[1]);
+        json.writeNumber(params[2]);
+        json.writeNumber(params[3]);
+        json.endArray();
+        json.endMember();
+    }
+}
+
+
+static inline void
+dumpShadersUniforms(JSONWriter &json)
+{
+    GLint program = 0;
+    glGetIntegerv(GL_CURRENT_PROGRAM, &program);
+
+    GLhandleARB programObj = glGetHandleARB(GL_PROGRAM_OBJECT_ARB);
+
     json.beginMember("shaders");
     json.beginObject();
-    dumpCurrentProgram(json);
-    dumpArbProgram(json, GL_FRAGMENT_PROGRAM_ARB);
-    dumpArbProgram(json, GL_VERTEX_PROGRAM_ARB);
+    if (program) {
+        dumpProgram(json, program);
+    } else if (programObj) {
+        dumpProgramObj(json, programObj);
+    } else {
+        dumpArbProgram(json, GL_FRAGMENT_PROGRAM_ARB);
+        dumpArbProgram(json, GL_VERTEX_PROGRAM_ARB);
+    }
     json.endObject();
-    json.endMember(); //shaders
+    json.endMember(); // shaders
+
+    json.beginMember("uniforms");
+    json.beginObject();
+    if (program) {
+        dumpProgramUniforms(json, program);
+    } else if (programObj) {
+        dumpProgramObjUniforms(json, programObj);
+    } else {
+        dumpArbProgramUniforms(json, GL_FRAGMENT_PROGRAM_ARB, "fp.");
+        dumpArbProgramUniforms(json, GL_VERTEX_PROGRAM_ARB, "vp.");
+    }
+    json.endObject();
+    json.endMember(); // uniforms
 }
 
 
@@ -232,6 +568,9 @@ static inline void
 dumpTextureImage(JSONWriter &json, GLenum target, GLint level)
 {
     GLint width, height = 1, depth = 1;
+    GLint format;
+
+    glGetTexLevelParameteriv(target, level, GL_TEXTURE_INTERNAL_FORMAT, &format);
 
     width = 0;
     glGetTexLevelParameteriv(target, level, GL_TEXTURE_WIDTH, &width);
@@ -252,7 +591,8 @@ dumpTextureImage(JSONWriter &json, GLenum target, GLint level)
 
         GLint active_texture = GL_TEXTURE0;
         glGetIntegerv(GL_ACTIVE_TEXTURE, &active_texture);
-        snprintf(label, sizeof label, "%s, %s, level = %i", enumToString(active_texture), enumToString(target), level);
+        snprintf(label, sizeof label, "%s, %s, level = %d",
+                 enumToString(active_texture), enumToString(target), level);
 
         json.beginMember(label);
 
@@ -264,6 +604,8 @@ dumpTextureImage(JSONWriter &json, GLenum target, GLint level)
         json.writeNumberMember("__width__", width);
         json.writeNumberMember("__height__", height);
         json.writeNumberMember("__depth__", depth);
+
+        json.writeStringMember("__format__", enumToString(format));
 
         // Hardcoded for now, but we could chose types more adequate to the
         // texture internal format
@@ -282,7 +624,7 @@ dumpTextureImage(JSONWriter &json, GLenum target, GLint level)
         json.beginMember("__data__");
         char *pngBuffer;
         int pngBufferSize;
-        Image::writePixelsToBuffer(pixels, width, height, 4, false, &pngBuffer, &pngBufferSize);
+        image::writePixelsToBuffer(pixels, width, height, 4, true, &pngBuffer, &pngBufferSize);
         json.writeBase64(pngBuffer, pngBufferSize);
         free(pngBuffer);
         json.endMember(); // __data__
@@ -396,6 +738,7 @@ getDrawableBounds(GLint *width, GLint *height) {
 
 #else
 
+#if !TRACE_EGL
     Display *display;
     Drawable drawable;
     Window root;
@@ -418,6 +761,9 @@ getDrawableBounds(GLint *width, GLint *height) {
 
     *width = w;
     *height = h;
+#else
+    return false;
+#endif
 
 #endif
 
@@ -483,6 +829,25 @@ getTextureLevelSize(GLint texture, GLint level, GLint *width, GLint *height)
 }
 
 
+static GLenum
+getTextureLevelFormat(GLint texture, GLint level)
+{
+    GLenum target;
+    GLint bound_texture = 0;
+    if (!bindTexture(texture, target, bound_texture)) {
+        return GL_NONE;
+    }
+
+    GLint format = GL_NONE;
+    glGetTexLevelParameteriv(target, level, GL_TEXTURE_INTERNAL_FORMAT, &format);
+
+    glBindTexture(target, bound_texture);
+
+    return format;
+}
+
+
+
 static bool
 getRenderbufferSize(GLint renderbuffer, GLint *width, GLint *height)
 {
@@ -498,6 +863,22 @@ getRenderbufferSize(GLint renderbuffer, GLint *width, GLint *height)
     glBindRenderbuffer(GL_RENDERBUFFER, bound_renderbuffer);
     
     return *width > 0 && *height > 0;
+}
+
+
+static GLenum
+getRenderbufferFormat(GLint renderbuffer)
+{
+    GLint bound_renderbuffer = 0;
+    glGetIntegerv(GL_RENDERBUFFER_BINDING, &bound_renderbuffer);
+    glBindRenderbuffer(GL_RENDERBUFFER, renderbuffer);
+
+    GLint format = GL_NONE;
+    glGetRenderbufferParameteriv(GL_RENDERBUFFER, GL_RENDERBUFFER_INTERNAL_FORMAT, &format);
+
+    glBindRenderbuffer(GL_RENDERBUFFER, bound_renderbuffer);
+    
+    return format;
 }
 
 
@@ -535,8 +916,45 @@ getFramebufferAttachmentSize(GLenum target, GLenum attachment, GLint *width, GLi
 }
 
 
-Image::Image *
-getDrawBufferImage(GLenum format) {
+
+static GLint
+getFramebufferAttachmentFormat(GLenum target, GLenum attachment)
+{
+    GLint object_type = GL_NONE;
+    glGetFramebufferAttachmentParameteriv(target, attachment,
+                                          GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE,
+                                          &object_type);
+    if (object_type == GL_NONE) {
+        return GL_NONE;
+    }
+
+    GLint object_name = 0;
+    glGetFramebufferAttachmentParameteriv(target, attachment,
+                                          GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME,
+                                          &object_name);
+    if (object_name == 0) {
+        return GL_NONE;
+    }
+
+    if (object_type == GL_RENDERBUFFER) {
+        return getRenderbufferFormat(object_name);
+    } else if (object_type == GL_TEXTURE) {
+        GLint texture_level = 0;
+        glGetFramebufferAttachmentParameteriv(target, attachment,
+                                              GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_LEVEL,
+                                              &texture_level);
+        return getTextureLevelFormat(object_name, texture_level);
+    } else {
+        std::cerr << "warning: unexpected GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE = " << object_type << "\n";
+        return GL_NONE;
+    }
+}
+
+
+
+image::Image *
+getDrawBufferImage() {
+    GLenum format = GL_RGB;
     GLint channels = __gl_format_channels(format);
     if (channels > 4) {
         return NULL;
@@ -567,7 +985,7 @@ getDrawBufferImage(GLenum format) {
         }
     }
 
-    Image::Image *image = new Image::Image(width, height, channels, true);
+    image::Image *image = new image::Image(width, height, channels, true);
     if (!image) {
         return NULL;
     }
@@ -609,7 +1027,8 @@ getDrawBufferImage(GLenum format) {
  * Dump the image of the currently bound read buffer.
  */
 static inline void
-dumpReadBufferImage(JSONWriter &json, GLint width, GLint height, GLenum format)
+dumpReadBufferImage(JSONWriter &json, GLint width, GLint height, GLenum format,
+                    GLint internalFormat = GL_NONE)
 {
     GLint channels = __gl_format_channels(format);
 
@@ -621,6 +1040,8 @@ dumpReadBufferImage(JSONWriter &json, GLint width, GLint height, GLenum format)
     json.writeNumberMember("__width__", width);
     json.writeNumberMember("__height__", height);
     json.writeNumberMember("__depth__", 1);
+
+    json.writeStringMember("__format__", enumToString(internalFormat));
 
     // Hardcoded for now, but we could chose types more adequate to the
     // texture internal format
@@ -640,7 +1061,7 @@ dumpReadBufferImage(JSONWriter &json, GLint width, GLint height, GLenum format)
     json.beginMember("__data__");
     char *pngBuffer;
     int pngBufferSize;
-    Image::writePixelsToBuffer(pixels, width, height, channels, false, &pngBuffer, &pngBufferSize);
+    image::writePixelsToBuffer(pixels, width, height, channels, true, &pngBuffer, &pngBufferSize);
     //std::cerr <<" Before = "<<(width * height * channels * sizeof *pixels)
     //          <<", after = "<<pngBufferSize << ", ratio = " << double(width * height * channels * sizeof *pixels)/pngBufferSize;
     json.writeBase64(pngBuffer, pngBufferSize);
@@ -784,7 +1205,10 @@ dumpDrawableImages(JSONWriter &json)
         glGetIntegerv(GL_READ_BUFFER, &read_buffer);
 
         GLint alpha_bits = 0;
+#if 0
+        // XXX: Ignore alpha until we are able to match the traced visual
         glGetIntegerv(GL_ALPHA_BITS, &alpha_bits);
+#endif
         GLenum format = alpha_bits ? GL_RGBA : GL_RGB;
         json.beginMember(enumToString(draw_buffer));
         dumpReadBufferImage(json, width, height, format);
@@ -809,6 +1233,8 @@ dumpDrawableImages(JSONWriter &json)
         json.endMember();
     }
 }
+
+
 /**
  * Dump the specified framebuffer attachment.
  *
@@ -822,8 +1248,10 @@ dumpFramebufferAttachment(JSONWriter &json, GLenum target, GLenum attachment, GL
         return;
     }
 
+    GLint internalFormat = getFramebufferAttachmentFormat(target, attachment);
+
     json.beginMember(enumToString(attachment));
-    dumpReadBufferImage(json, width, height, format);
+    dumpReadBufferImage(json, width, height, format, internalFormat);
     json.endMember();
 }
 
@@ -997,7 +1425,7 @@ void dumpCurrentContext(std::ostream &os)
 #endif
 
     dumpParameters(json);
-    dumpShaders(json);
+    dumpShadersUniforms(json);
     dumpTextures(json);
     dumpFramebuffer(json);
 

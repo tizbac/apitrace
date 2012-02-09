@@ -1,6 +1,9 @@
 #ifndef RETRACER_H
 #define RETRACER_H
 
+#include "trace_api.hpp"
+#include "apitracecall.h"
+
 #include <QThread>
 #include <QProcess>
 
@@ -8,12 +11,6 @@ class ApiTraceState;
 namespace QJson {
     class Parser;
 }
-
-struct RetraceError {
-    int callIndex;
-    QString type;
-    QString message;
-};
 
 /* internal class used by the retracer to run
  * in the thread */
@@ -28,6 +25,8 @@ public:
 
     QString fileName() const;
     void setFileName(const QString &name);
+
+    void setAPI(trace::API api);
 
     bool isBenchmarking() const;
     void setBenchmarking(bool bench);
@@ -48,15 +47,16 @@ public slots:
 signals:
     void finished(const QString &output);
     void error(const QString &msg);
-    void foundState(const ApiTraceState &state);
-    void retraceErrors(const QList<RetraceError> &errors);
+    void foundState(ApiTraceState *state);
+    void retraceErrors(const QList<ApiTraceError> &errors);
 
 private slots:
-    void replayFinished();
+    void replayFinished(int exitCode, QProcess::ExitStatus exitStatus);
     void replayError(QProcess::ProcessError err);
 
 private:
     QString m_fileName;
+    trace::API m_api;
     bool m_benchmarking;
     bool m_doubleBuffered;
     bool m_captureState;
@@ -75,6 +75,8 @@ public:
     QString fileName() const;
     void setFileName(const QString &name);
 
+    void setAPI(trace::API api);
+
     bool isBenchmarking() const;
     void setBenchmarking(bool bench);
 
@@ -89,9 +91,9 @@ public:
 
 signals:
     void finished(const QString &output);
-    void foundState(const ApiTraceState &state);
+    void foundState(ApiTraceState *state);
     void error(const QString &msg);
-    void retraceErrors(const QList<RetraceError> &errors);
+    void retraceErrors(const QList<ApiTraceError> &errors);
 
 protected:
     virtual void run();
@@ -100,6 +102,7 @@ private slots:
     void cleanup();
 private:
     QString m_fileName;
+    trace::API m_api;
     bool m_benchmarking;
     bool m_doubleBuffered;
     bool m_captureState;

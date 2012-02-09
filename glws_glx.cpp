@@ -23,14 +23,13 @@
  *
  **************************************************************************/
 
+#include <assert.h>
 #include <stdlib.h>
+
 #include <iostream>
 
+#include "glproc.hpp"
 #include "glws.hpp"
-
-#include <X11/Xlib.h>
-#include <GL/gl.h>
-#include <GL/glx.h>
 
 
 namespace glws {
@@ -39,14 +38,20 @@ namespace glws {
 static Display *display = NULL;
 static int screen = 0;
 
+static unsigned glxVersion = 0;
+static const char *extensions = 0;
+static bool has_GLX_ARB_create_context = false;
+
 
 class GlxVisual : public Visual
 {
 public:
+    GLXFBConfig fbconfig;
     XVisualInfo *visinfo;
 
-    GlxVisual(XVisualInfo *vi) :
-        visinfo(vi)
+    GlxVisual() :
+        fbconfig(0),
+        visinfo(0)
     {}
 
     ~GlxVisual() {
@@ -80,17 +85,6 @@ static void describeEvent(const XEvent &event) {
     }
 }
 
-static void waitForEvent(Window window, int type) {
-    XFlush(display);
-    XEvent event;
-    do {
-        XNextEvent(display, &event);
-        describeEvent(event);
-    } while (event.type != type ||
-             event.xany.window != window);
-}
-
-
 class GlxDrawable : public Drawable
 {
 public:
@@ -99,7 +93,7 @@ public:
     GlxDrawable(const Visual *vis, int w, int h) :
         Drawable(vis, w, h)
     {
-        XVisualInfo *visinfo = dynamic_cast<const GlxVisual *>(visual)->visinfo;
+        XVisualInfo *visinfo = static_cast<const GlxVisual *>(visual)->visinfo;
 
         Window root = RootWindow(display, screen);
 
@@ -108,7 +102,7 @@ public:
         attr.background_pixel = 0;
         attr.border_pixel = 0;
         attr.colormap = XCreateColormap(display, root, visinfo->visual, AllocNone);
-        attr.event_mask = StructureNotifyMask | ExposureMask | KeyPressMask;
+        attr.event_mask = StructureNotifyMask;
 
         unsigned long mask;
         mask = CWBackPixel | CWBorderPixel | CWColormap | CWEventMask;
@@ -141,12 +135,24 @@ public:
         glXWaitX();
     }
 
+    void waitForEvent(int type) {
+        XEvent event;
+        do {
+            XWindowEvent(display, window, StructureNotifyMask, &event);
+            describeEvent(event);
+        } while (event.type != type);
+    }
+
     ~GlxDrawable() {
         XDestroyWindow(display, window);
     }
 
     void
     resize(int w, int h) {
+        if (w == width && h == height) {
+            return;
+        }
+
         glXWaitGL();
 
         // We need to ensure that pending events are processed here, and XSync
@@ -159,27 +165,31 @@ public:
         XResizeWindow(display, window, w, h);
 
         // Tell the window manager to respect the requested size
-        XSizeHints *size_hints;
-        size_hints = XAllocSizeHints();
-        size_hints->max_width  = size_hints->min_width  = w;
-        size_hints->max_height = size_hints->min_height = h;
-        size_hints->flags = PMinSize | PMaxSize;
-        XSetWMNormalHints(display, window, size_hints);
-        XFree(size_hints);
+        XSizeHints size_hints;
+        size_hints.max_width  = size_hints.min_width  = w;
+        size_hints.max_height = size_hints.min_height = h;
+        size_hints.flags = PMinSize | PMaxSize;
+        XSetWMNormalHints(display, window, &size_hints);
 
-        waitForEvent(window, ConfigureNotify);
+        waitForEvent(ConfigureNotify);
 
         glXWaitX();
     }
 
     void show(void) {
-        if (!visible) {
-            XMapWindow(display, window);
-
-            waitForEvent(window, Expose);
-
-            Drawable::show();
+        if (visible) {
+            return;
         }
+
+        glXWaitGL();
+
+        XMapWindow(display, window);
+
+        waitForEvent(MapNotify);
+
+        glXWaitX();
+
+        Drawable::show();
     }
 
     void swapBuffers(void) {
@@ -193,8 +203,8 @@ class GlxContext : public Context
 public:
     GLXContext context;
 
-    GlxContext(const Visual *vis, GLXContext ctx) :
-        Context(vis),
+    GlxContext(const Visual *vis, Profile prof, GLXContext ctx) :
+        Context(vis, prof),
         context(ctx)
     {}
 
@@ -203,108 +213,165 @@ public:
     }
 };
 
-
-class GlxWindowSystem : public WindowSystem
-{
-public:
-    GlxWindowSystem() {
-        if (!display) {
-            display = XOpenDisplay(NULL);
-            if (!display) {
-                std::cerr << "error: unable to open display " << XDisplayName(NULL) << "\n";
-                exit(1);
-            }
-            screen = DefaultScreen(display);
-        }
+void
+init(void) {
+    display = XOpenDisplay(NULL);
+    if (!display) {
+        std::cerr << "error: unable to open display " << XDisplayName(NULL) << "\n";
+        exit(1);
     }
 
-    ~GlxWindowSystem() {
+    screen = DefaultScreen(display);
+
+    int major = 0, minor = 0;
+    glXQueryVersion(display, &major, &minor);
+    glxVersion = (major << 8) | minor;
+
+    extensions = glXQueryExtensionsString(display, screen);
+    has_GLX_ARB_create_context = checkExtension("GLX_ARB_create_context", extensions);
+}
+
+void
+cleanup(void) {
+    if (display) {
         XCloseDisplay(display);
+        display = NULL;
+    }
+}
+
+Visual *
+createVisual(bool doubleBuffer, Profile profile) {
+    if (profile != PROFILE_COMPAT &&
+        profile != PROFILE_CORE) {
+        return NULL;
     }
 
-    Visual *
-    createVisual(bool doubleBuffer) {
-        int single_attribs[] = {
-            GLX_RGBA,
-            GLX_RED_SIZE, 1,
-            GLX_GREEN_SIZE, 1,
-            GLX_BLUE_SIZE, 1,
-            GLX_ALPHA_SIZE, 1,
-            GLX_DEPTH_SIZE, 1,
-            GLX_STENCIL_SIZE, 1,
-            None
-        };
+    GlxVisual *visual = new GlxVisual;
 
-        int double_attribs[] = {
-            GLX_RGBA,
-            GLX_RED_SIZE, 1,
-            GLX_GREEN_SIZE, 1,
-            GLX_BLUE_SIZE, 1,
-            GLX_ALPHA_SIZE, 1,
-            GLX_DOUBLEBUFFER,
-            GLX_DEPTH_SIZE, 1,
-            GLX_STENCIL_SIZE, 1,
-            None
-        };
+    if (glxVersion >= 0x0103) {
+        Attributes<int> attribs;
+        attribs.add(GLX_DRAWABLE_TYPE, GLX_WINDOW_BIT);
+        attribs.add(GLX_RENDER_TYPE, GLX_RGBA_BIT);
+        attribs.add(GLX_RED_SIZE, 1);
+        attribs.add(GLX_GREEN_SIZE, 1);
+        attribs.add(GLX_BLUE_SIZE, 1);
+        attribs.add(GLX_ALPHA_SIZE, 1);
+        attribs.add(GLX_DOUBLEBUFFER, doubleBuffer ? GL_TRUE : GL_FALSE);
+        attribs.add(GLX_DEPTH_SIZE, 1);
+        attribs.add(GLX_STENCIL_SIZE, 1);
+        attribs.end();
 
-        XVisualInfo *visinfo;
+        int num_configs = 0;
+        GLXFBConfig * fbconfigs;
+        fbconfigs = glXChooseFBConfig(display, screen, attribs, &num_configs);
+        assert(num_configs && fbconfigs);
+        visual->fbconfig = fbconfigs[0];
+        assert(visual->fbconfig);
+        visual->visinfo = glXGetVisualFromFBConfig(display, visual->fbconfig);
+        assert(visual->visinfo);
+    } else {
+        Attributes<int> attribs;
+        attribs.add(GLX_RGBA);
+        attribs.add(GLX_RED_SIZE, 1);
+        attribs.add(GLX_GREEN_SIZE, 1);
+        attribs.add(GLX_BLUE_SIZE, 1);
+        attribs.add(GLX_ALPHA_SIZE, 1);
+        if (doubleBuffer) {
+            attribs.add(GLX_DOUBLEBUFFER);
+        }
+        attribs.add(GLX_DEPTH_SIZE, 1);
+        attribs.add(GLX_STENCIL_SIZE, 1);
+        attribs.end();
 
-        visinfo = glXChooseVisual(display, screen, doubleBuffer ? double_attribs : single_attribs);
-
-        return new GlxVisual(visinfo);
+        visual->visinfo = glXChooseVisual(display, screen, attribs);
     }
 
-    Drawable *
-    createDrawable(const Visual *visual, int width, int height)
-    {
-        return new GlxDrawable(visual, width, height);
+    return visual;
+}
+
+Drawable *
+createDrawable(const Visual *visual, int width, int height)
+{
+    return new GlxDrawable(visual, width, height);
+}
+
+Context *
+createContext(const Visual *_visual, Context *shareContext, Profile profile)
+{
+    const GlxVisual *visual = static_cast<const GlxVisual *>(_visual);
+    GLXContext share_context = NULL;
+    GLXContext context;
+
+    if (shareContext) {
+        share_context = static_cast<GlxContext*>(shareContext)->context;
     }
 
-    Context *
-    createContext(const Visual *visual, Context *shareContext)
-    {
-        XVisualInfo *visinfo = dynamic_cast<const GlxVisual *>(visual)->visinfo;
-        GLXContext share_context = NULL;
-        GLXContext context;
-
-        if (shareContext) {
-            share_context = dynamic_cast<GlxContext*>(shareContext)->context;
+    if (glxVersion >= 0x0104 && has_GLX_ARB_create_context) {
+        Attributes<int> attribs;
+        
+        attribs.add(GLX_RENDER_TYPE, GLX_RGBA_TYPE);
+        if (debug) {
+            attribs.add(GLX_CONTEXT_FLAGS_ARB, GLX_CONTEXT_DEBUG_BIT_ARB);
         }
 
-        context = glXCreateContext(display, visinfo,
-                                   share_context, True);
-        return new GlxContext(visual, context);
-    }
+        switch (profile) {
+        case PROFILE_COMPAT:
+            break;
+        case PROFILE_CORE:
+            // XXX: This will invariable return a 3.2 context, when supported.
+            // We probably should have a PROFILE_CORE_XX per version.
+            attribs.add(GLX_CONTEXT_MAJOR_VERSION_ARB, 3);
+            attribs.add(GLX_CONTEXT_MINOR_VERSION_ARB, 2);
+            attribs.add(GLX_CONTEXT_PROFILE_MASK_ARB, GLX_CONTEXT_CORE_PROFILE_BIT_ARB);
+            break;
+        default:
+            return NULL;
+        }
+        
+        attribs.end();
 
-    bool
-    makeCurrent(Drawable *drawable, Context *context)
-    {
-        if (!drawable || !context) {
-            return glXMakeCurrent(display, None, NULL);
+        context = glXCreateContextAttribsARB(display, visual->fbconfig, share_context, True, attribs);
+    } else {
+        if (profile != PROFILE_COMPAT) {
+            return NULL;
+        }
+
+        if (glxVersion >= 0x103) {
+            context = glXCreateNewContext(display, visual->fbconfig, GLX_RGBA_TYPE, share_context, True);
         } else {
-            GlxDrawable *glxDrawable = dynamic_cast<GlxDrawable *>(drawable);
-            GlxContext *glxContext = dynamic_cast<GlxContext *>(context);
-
-            return glXMakeCurrent(display, glxDrawable->window, glxContext->context);
+            context = glXCreateContext(display, visual->visinfo, share_context, True);
         }
     }
 
-    bool
-    processEvents(void) {
-        XFlush(display);
-        while (XPending(display) > 0) {
-            XEvent event;
-            XNextEvent(display, &event);
-            describeEvent(event);
-        }
-        return true;
+    if (!context) {
+        return NULL;
     }
-};
 
+    return new GlxContext(visual, profile, context);
+}
 
-WindowSystem *createNativeWindowSystem(void) {
-    return new GlxWindowSystem();
+bool
+makeCurrent(Drawable *drawable, Context *context)
+{
+    if (!drawable || !context) {
+        return glXMakeCurrent(display, None, NULL);
+    } else {
+        GlxDrawable *glxDrawable = static_cast<GlxDrawable *>(drawable);
+        GlxContext *glxContext = static_cast<GlxContext *>(context);
+
+        return glXMakeCurrent(display, glxDrawable->window, glxContext->context);
+    }
+}
+
+bool
+processEvents(void) {
+    while (XPending(display) > 0) {
+        XEvent event;
+        XNextEvent(display, &event);
+        describeEvent(event);
+    }
+    return true;
 }
 
 
-} /* namespace glretrace */
+} /* namespace glws */

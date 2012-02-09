@@ -19,7 +19,7 @@ Retracer::Retracer(QObject *parent)
 #else
     QString format = QLatin1String("%1:");
 #endif
-    QString buildPath = format.arg(BUILD_DIR);
+    QString buildPath = format.arg(APITRACE_BINARY_DIR);
     m_processEnvironment = QProcessEnvironment::systemEnvironment();
     m_processEnvironment.insert("PATH", buildPath +
                                 m_processEnvironment.value("PATH"));
@@ -36,6 +36,11 @@ QString Retracer::fileName() const
 void Retracer::setFileName(const QString &name)
 {
     m_fileName = name;
+}
+
+void Retracer::setAPI(trace::API api)
+{
+    m_api = api;
 }
 
 bool Retracer::isBenchmarking() const
@@ -85,6 +90,7 @@ void Retracer::run()
     retrace->process()->setProcessEnvironment(m_processEnvironment);
 
     retrace->setFileName(m_fileName);
+    retrace->setAPI(m_api);
     retrace->setBenchmarking(m_benchmarking);
     retrace->setDoubleBuffered(m_doubleBuffered);
     retrace->setCaptureState(m_captureState);
@@ -98,10 +104,10 @@ void Retracer::run()
             this, SIGNAL(finished(const QString&)));
     connect(retrace, SIGNAL(error(const QString&)),
             this, SIGNAL(error(const QString&)));
-    connect(retrace, SIGNAL(foundState(const ApiTraceState&)),
-            this, SIGNAL(foundState(const ApiTraceState&)));
-    connect(retrace, SIGNAL(retraceErrors(const QList<RetraceError>&)),
-            this, SIGNAL(retraceErrors(const QList<RetraceError>&)));
+    connect(retrace, SIGNAL(foundState(ApiTraceState*)),
+            this, SIGNAL(foundState(ApiTraceState*)));
+    connect(retrace, SIGNAL(retraceErrors(const QList<ApiTraceError>&)),
+            this, SIGNAL(retraceErrors(const QList<ApiTraceError>&)));
 
     retrace->start();
 
@@ -118,7 +124,17 @@ void Retracer::run()
 
 void RetraceProcess::start()
 {
+    QString prog;
     QStringList arguments;
+
+    if (m_api == trace::API_GL) {
+        prog = QLatin1String("glretrace");
+    } else if (m_api == trace::API_EGL) {
+        prog = QLatin1String("eglretrace");
+    } else {
+        assert(0);
+        return;
+    }
 
     if (m_doubleBuffered) {
         arguments << QLatin1String("-db");
@@ -137,11 +153,11 @@ void RetraceProcess::start()
 
     arguments << m_fileName;
 
-    m_process->start(QLatin1String("glretrace"), arguments);
+    m_process->start(prog, arguments);
 }
 
 
-void RetraceProcess::replayFinished()
+void RetraceProcess::replayFinished(int exitCode, QProcess::ExitStatus exitStatus)
 {
     QByteArray output = m_process->readAllStandardOutput();
     QString msg;
@@ -152,22 +168,29 @@ void RetraceProcess::replayFinished()
     qDebug()<<"\terr = "<<errStr;
     qDebug()<<"\tout = "<<output;
 #endif
-    if (m_captureState) {
-        bool ok = false;
-        QVariantMap parsedJson = m_jsonParser->parse(output, &ok).toMap();
-        ApiTraceState state(parsedJson);
-        emit foundState(state);
-        msg = tr("State fetched.");
+
+    if (exitStatus != QProcess::NormalExit) {
+        msg = QLatin1String("Process crashed");
+    } else if (exitCode != 0) {
+        msg = QLatin1String("Process exited with non zero exit code");
     } else {
-        msg = QString::fromUtf8(output);
+        if (m_captureState) {
+            bool ok = false;
+            QVariantMap parsedJson = m_jsonParser->parse(output, &ok).toMap();
+            ApiTraceState *state = new ApiTraceState(parsedJson);
+            emit foundState(state);
+            msg = tr("State fetched.");
+        } else {
+            msg = QString::fromUtf8(output);
+        }
     }
 
     QStringList errorLines = errStr.split('\n');
-    QList<RetraceError> errors;
+    QList<ApiTraceError> errors;
     QRegExp regexp("(^\\d+): +(\\b\\w+\\b): (.+$)");
     foreach(QString line, errorLines) {
         if (regexp.indexIn(line) != -1) {
-            RetraceError error;
+            ApiTraceError error;
             error.callIndex = regexp.cap(1).toInt();
             error.type = regexp.cap(2);
             error.message = regexp.cap(3);
@@ -182,25 +205,32 @@ void RetraceProcess::replayFinished()
 
 void RetraceProcess::replayError(QProcess::ProcessError err)
 {
+    /*
+     * XXX: this function is likely unnecessary and should be eliminated given
+     * that replayFinished is always called, even on errors.
+     */
+
+#if 0
     qDebug()<<"Process error = "<<err;
     qDebug()<<"\terr = "<<m_process->readAllStandardError();
     qDebug()<<"\tout = "<<m_process->readAllStandardOutput();
+#endif
 
     emit error(
         tr("Couldn't execute the replay file '%1'").arg(m_fileName));
 }
 
-Q_DECLARE_METATYPE(QList<RetraceError>);
+Q_DECLARE_METATYPE(QList<ApiTraceError>);
 RetraceProcess::RetraceProcess(QObject *parent)
     : QObject(parent)
 {
     m_process = new QProcess(this);
     m_jsonParser = new QJson::Parser();
 
-    qRegisterMetaType<QList<RetraceError> >();
+    qRegisterMetaType<QList<ApiTraceError> >();
 
     connect(m_process, SIGNAL(finished(int, QProcess::ExitStatus)),
-            this, SLOT(replayFinished()));
+            this, SLOT(replayFinished(int, QProcess::ExitStatus)));
     connect(m_process, SIGNAL(error(QProcess::ProcessError)),
             this, SLOT(replayError(QProcess::ProcessError)));
 }
@@ -218,6 +248,11 @@ QString RetraceProcess::fileName() const
 void RetraceProcess::setFileName(const QString &name)
 {
     m_fileName = name;
+}
+
+void RetraceProcess::setAPI(trace::API api)
+{
+    m_api = api;
 }
 
 bool RetraceProcess::isBenchmarking() const

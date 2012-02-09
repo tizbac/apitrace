@@ -28,6 +28,7 @@
 
 #include "trace_parser.hpp"
 #include "glws.hpp"
+#include "retrace.hpp"
 
 
 namespace glretrace {
@@ -35,9 +36,9 @@ namespace glretrace {
 
 extern bool double_buffer;
 extern bool insideGlBeginEnd;
-extern Trace::Parser parser;
-extern glws::WindowSystem *ws;
-extern glws::Visual *visual;
+extern trace::Parser parser;
+extern glws::Profile defaultProfile;
+extern glws::Visual *visual[glws::PROFILE_MAX];
 extern glws::Drawable *drawable;
 extern glws::Context *context;
 
@@ -45,30 +46,22 @@ extern unsigned frame;
 extern long long startTime;
 extern bool wait;
 
-enum frequency {
-    FREQUENCY_NEVER = 0,
-    FREQUENCY_FRAME,
-    FREQUENCY_FRAMEBUFFER,
-    FREQUENCY_DRAW,
-};
-
 extern bool benchmark;
-extern const char *compare_prefix;
-extern const char *snapshot_prefix;
-extern enum frequency snapshot_frequency;
 
 extern unsigned dump_state;
 
 void
-checkGlError(Trace::Call &call);
+checkGlError(trace::Call &call);
 
-void retrace_call_cgl(Trace::Call &call);
-void retrace_call_glx(Trace::Call &call);
-void retrace_call_wgl(Trace::Call &call);
+extern const retrace::Entry gl_callbacks[];
+extern const retrace::Entry cgl_callbacks[];
+extern const retrace::Entry glx_callbacks[];
+extern const retrace::Entry wgl_callbacks[];
+extern const retrace::Entry egl_callbacks[];
 
-void snapshot(unsigned call_no);
-void frame_complete(unsigned call_no);
+void frame_complete(trace::Call &call);
 
+void updateDrawable(int width, int height);
 
 } /* namespace glretrace */
 

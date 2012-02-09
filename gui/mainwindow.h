@@ -3,6 +3,9 @@
 
 #include "ui_mainwindow.h"
 
+#include "trace_api.hpp"
+#include "apitrace.h"
+
 #include <QMainWindow>
 #include <QProcess>
 
@@ -19,7 +22,7 @@ class QModelIndex;
 class QProgressBar;
 class QTreeWidgetItem;
 class QUrl;
-struct RetraceError;
+struct ApiTraceError;
 class Retracer;
 class SearchWidget;
 class ShadersSourceWidget;
@@ -34,7 +37,7 @@ public:
     ~MainWindow();
 
 public slots:
-    void loadTrace(const QString &fileName);
+    void loadTrace(const QString &fileName, int callNum = -1);
 
 private slots:
     void callItemSelected(const QModelIndex &index);
@@ -43,15 +46,17 @@ private slots:
     void replayStart();
     void replayStop();
     void replayFinished(const QString &output);
-    void replayStateFound(const ApiTraceState &state);
+    void replayStateFound(ApiTraceState *state);
     void replayError(const QString &msg);
     void startedLoadingTrace();
+    void loadProgess(int percent);
     void finishedLoadingTrace();
     void lookupState();
     void showSettings();
     void openHelp(const QUrl &url);
     void showSurfacesMenu(const QPoint &pos);
     void showSelectedSurface();
+    void saveSelectedSurface();
     void slotGoTo();
     void slotJumpTo(int callNum);
     void createdTrace(const QString &path);
@@ -67,8 +72,14 @@ private slots:
     void slotGoFrameStart();
     void slotGoFrameEnd();
     void slotTraceChanged(ApiTraceCall *call);
-    void slotRetraceErrors(const QList<RetraceError> &errors);
+    void slotRetraceErrors(const QList<ApiTraceError> &errors);
     void slotErrorSelected(QTreeWidgetItem *current);
+    void slotSearchResult(const ApiTrace::SearchRequest &request,
+                          ApiTrace::SearchResult result,
+                          ApiTraceCall *call);
+    void slotFoundFrameStart(ApiTraceFrame *frame);
+    void slotFoundFrameEnd(ApiTraceFrame *frame);
+    void slotJumpToResult(ApiTraceCall *call);
 
 private:
     void initObjects();
@@ -76,16 +87,27 @@ private:
     void newTraceFile(const QString &fileName);
     void replayTrace(bool dumpState);
     void fillStateForFrame();
+
+    /* there's a difference between selected frame/call and
+     * current call/frame. the former implies actual selection
+     * the latter might be just a highlight, e.g. during searching
+     */
+    ApiTraceFrame *selectedFrame() const;
+    ApiTraceCall *selectedCall() const;
     ApiTraceFrame *currentFrame() const;
     ApiTraceCall *currentCall() const;
+
 
 private:
     Ui_MainWindow m_ui;
     ShadersSourceWidget *m_sourcesWidget;
 
+    trace::API m_api;
+
     ApiTrace *m_trace;
     ApiTraceModel *m_model;
     ApiTraceFilter *m_proxyModel;
+    int m_initalCallNum;
 
     QProgressBar *m_progressBar;
 

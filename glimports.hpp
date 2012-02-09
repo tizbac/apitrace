@@ -31,8 +31,24 @@
 #define _GLIMPORTS_HPP_
 
 
-// Prevent including system's glext.h
+// Prevent including MacOSX's glext.h which lives in OpenGL/glext.h and not
+// GL/glext.h
 #define __glext_h_
+
+
+// Some functions take GLenum disguised as GLint.  Apple noticed and fixed it
+// in the Mac OS X 10.6.x gl.h headers.  Regardless, C++ typechecking rules
+// force the wrappers to match the prototype precisely.
+#if defined(__APPLE__)
+#  include <AvailabilityMacros.h> // for MAC_OS_X_VERSION_10_7
+#  if defined(MAC_OS_X_VERSION_10_7)
+#    define GLenum_int GLint
+#  else
+#    define GLenum_int GLenum
+#  endif
+#else
+#  define GLenum_int GLint
+#endif
 
 
 #if defined(_WIN32)
@@ -50,7 +66,10 @@
 
 #else
 
+#ifdef HAVE_X11
 #include <X11/Xlib.h>
+#endif
+
 #include <GL/gl.h>
 
 #endif /* !_WIN32 */
@@ -58,17 +77,24 @@
 
 // Include our own glext.h
 #undef __glext_h_
-#include "glext/glext.h"
+#include <GL/glext.h>
 
 
 #ifndef GL_TEXTURE_INDEX_SIZE_EXT
 #define GL_TEXTURE_INDEX_SIZE_EXT         0x80ED
 #endif
 
+// GL_NVX_gpu_memory_info
+#define GL_GPU_MEMORY_INFO_DEDICATED_VIDMEM_NVX          0x9047
+#define GL_GPU_MEMORY_INFO_TOTAL_AVAILABLE_MEMORY_NVX    0x9048
+#define GL_GPU_MEMORY_INFO_CURRENT_AVAILABLE_VIDMEM_NVX  0x9049
+#define GL_GPU_MEMORY_INFO_EVICTION_COUNT_NVX            0x904A
+#define GL_GPU_MEMORY_INFO_EVICTED_MEMORY_NVX            0x904B
+
 
 #if defined(_WIN32)
 
-#include "glext/wglext.h"
+#include <GL/wglext.h>
 
 #define GLAPIENTRY __stdcall
 
@@ -98,9 +124,16 @@ typedef struct _WGLSWAP
 #include <OpenGL/CGLIOSurface.h>
 #include <OpenGL/CGLDevice.h>
 
+#ifndef CGL_VERSION_1_3
+#define kCGLPFAOpenGLProfile 99
+#define kCGLOGLPVersion_Legacy 0x1000
+#define kCGLOGLPVersion_3_2_Core 0x3200
+#endif
+
 extern "C" {
 
-typedef int CGSConnectionID;
+// From http://www.opensource.apple.com/source/gdb/gdb-954/libcheckpoint/cpcg.c
+typedef void * CGSConnectionID;
 typedef int CGSWindowID;
 typedef int CGSSurfaceID;
 
@@ -112,13 +145,18 @@ CGLError CGLUpdateContext(CGLContextObj ctx);
 
 #else
 
+#ifdef HAVE_X11
 #include <GL/glx.h>
-#include "glext/glxext.h"
+#include <GL/glxext.h>
+#endif
 
-/* Prevent collision with Trace::Bool */
+/* Prevent collision with trace::Bool */
 #undef Bool
 
 #endif
+
+
+#include "eglimports.hpp"
 
 
 #endif /* _GLIMPORTS_HPP_ */

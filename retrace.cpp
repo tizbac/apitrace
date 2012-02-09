@@ -27,6 +27,8 @@
 #include <string.h>
 #include <iostream>
 
+#include "os_time.hpp"
+#include "trace_dump.hpp"
 #include "retrace.hpp"
 
 
@@ -34,31 +36,100 @@ namespace retrace {
 
 
 int verbosity = 0;
+bool profiling = false;
 
 
-void ignore(Trace::Call &call) {
+static bool call_dumped = false;
+
+
+static void dumpCall(trace::Call &call) {
+    if (verbosity >= 0 && !call_dumped) {
+        std::cout << call;
+        std::cout.flush();
+        call_dumped = true;
+    }
+}
+
+
+std::ostream &warning(trace::Call &call) {
+    dumpCall(call);
+
+    std::cerr << call.no << ": ";
+    std::cerr << "warning: ";
+
+    return std::cerr;
+}
+
+
+void ignore(trace::Call &call) {
     (void)call;
 }
 
-void retrace_unknown(Trace::Call &call) {
-    if (verbosity >= 0) {
-        std::cerr << call.no << ": warning: unknown call " << call.name() << "\n";
+void unsupported(trace::Call &call) {
+    warning(call) << "unsupported " << call.name() << " call\n";
+}
+
+inline void Retracer::addCallback(const Entry *entry) {
+    assert(entry->name);
+    assert(entry->callback);
+    map[entry->name] = entry->callback;
+}
+
+
+void Retracer::addCallbacks(const Entry *entries) {
+    while (entries->name && entries->callback) {
+        addCallback(entries++);
     }
 }
 
-void dispatch(Trace::Call &call, const Entry *entries, unsigned num_entries)
-{
-    /* TODO: do a bisection instead of a linear search */
 
-    const char *name = call.name();
-    for (unsigned i = 0; i < num_entries; ++i) {
-        if (strcmp(name, entries[i].name) == 0) {
-            entries[i].callback(call);
-            return;
+void Retracer::retrace(trace::Call &call) {
+    call_dumped = false;
+
+    if (verbosity >= 1) {
+        if (verbosity >= 2 ||
+            !(call.flags & trace::CALL_FLAG_VERBOSE)) {
+            dumpCall(call);
         }
     }
 
-    retrace_unknown(call);
+    Callback callback = 0;
+
+    trace::Id id = call.sig->id;
+    if (id >= callbacks.size()) {
+        callbacks.resize(id + 1);
+        callback = 0;
+    } else {
+        callback = callbacks[id];
+    }
+
+    if (!callback) {
+        Map::const_iterator it = map.find(call.name());
+        if (it == map.end()) {
+            callback = &unsupported;
+        } else {
+            callback = it->second;
+        }
+        callbacks[id] = callback;
+    }
+
+    assert(callback);
+    assert(callbacks[id] == callback);
+
+    if (retrace::profiling) {
+        long long startTime = os::getTime();
+        callback(call);
+        long long stopTime = os::getTime();
+        float timeInterval = (stopTime - startTime) * (1.0E6 / os::timeFrequency);
+
+        std::cout
+            << call.no << " "
+            << "[" << timeInterval << " usec] "
+        ;
+        trace::dump(call, std::cout, trace::DUMP_FLAG_NO_CALL_NO | trace::DUMP_FLAG_NO_COLOR);
+    } else {
+        callback(call);
+    }
 }
 
 

@@ -1,5 +1,6 @@
 /**************************************************************************
  *
+ * Copyright 2011 Jose Fonseca
  * Copyright 2010 VMware, Inc.
  * Copyright 2004 IBM Corporation
  * All Rights Reserved.
@@ -59,15 +60,222 @@ __gl_type_size(GLenum type)
     case GL_UNSIGNED_INT:
     case GL_FLOAT:
     case GL_4_BYTES:
+    case GL_FIXED:
         return 4;
     case GL_DOUBLE:
         return 8;
     default:
-        OS::DebugMessage("apitrace: warning: %s: unknown GLenum 0x%04X\n", __FUNCTION__, type);
+        os::log("apitrace: warning: %s: unknown GLenum 0x%04X\n", __FUNCTION__, type);
         return 0;
     }
 }
 
+static inline void
+__gl_uniform_size(GLenum type, GLenum &elemType, GLint &numElems) {
+    switch (type) {
+    case GL_FLOAT:
+        elemType = GL_FLOAT;
+        numElems = 1;
+        break;
+    case GL_FLOAT_VEC2:
+        elemType = GL_FLOAT;
+        numElems = 2;
+        break;
+    case GL_FLOAT_VEC3:
+        elemType = GL_FLOAT;
+        numElems = 3;
+        break;
+    case GL_FLOAT_VEC4:
+        elemType = GL_FLOAT;
+        numElems = 4;
+        break;
+    case GL_DOUBLE:
+        elemType = GL_DOUBLE;
+        numElems = 1;
+        break;
+    case GL_DOUBLE_VEC2:
+        elemType = GL_DOUBLE;
+        numElems = 2;
+        break;
+    case GL_DOUBLE_VEC3:
+        elemType = GL_DOUBLE;
+        numElems = 3;
+        break;
+    case GL_DOUBLE_VEC4:
+        elemType = GL_DOUBLE;
+        numElems = 4;
+        break;
+    case GL_INT:
+        elemType = GL_INT;
+        numElems = 1;
+        break;
+    case GL_INT_VEC2:
+        elemType = GL_INT;
+        numElems = 2;
+        break;
+    case GL_INT_VEC3:
+        elemType = GL_INT;
+        numElems = 3;
+        break;
+    case GL_INT_VEC4:
+        elemType = GL_INT;
+        numElems = 4;
+        break;
+    case GL_UNSIGNED_INT:
+        elemType = GL_UNSIGNED_INT;
+        numElems = 1;
+        break;
+    case GL_UNSIGNED_INT_VEC2:
+        elemType = GL_UNSIGNED_INT;
+        numElems = 2;
+        break;
+    case GL_UNSIGNED_INT_VEC3:
+        elemType = GL_UNSIGNED_INT;
+        numElems = 3;
+        break;
+    case GL_UNSIGNED_INT_VEC4:
+        elemType = GL_UNSIGNED_INT;
+        numElems = 4;
+        break;
+    case GL_BOOL:
+        elemType = GL_BOOL;
+        numElems = 1;
+        break;
+    case GL_BOOL_VEC2:
+        elemType = GL_BOOL;
+        numElems = 2;
+        break;
+    case GL_BOOL_VEC3:
+        elemType = GL_BOOL;
+        numElems = 3;
+        break;
+    case GL_BOOL_VEC4:
+        elemType = GL_BOOL;
+        numElems = 4;
+        break;
+    case GL_FLOAT_MAT2:
+        elemType = GL_FLOAT;
+        numElems = 2*2;
+        break;
+    case GL_FLOAT_MAT3:
+        elemType = GL_FLOAT;
+        numElems = 3*3;
+        break;
+    case GL_FLOAT_MAT4:
+        elemType = GL_FLOAT;
+        numElems = 4*4;
+        break;
+    case GL_FLOAT_MAT2x3:
+        elemType = GL_FLOAT;
+        numElems = 2*3;
+        break;
+    case GL_FLOAT_MAT2x4:
+        elemType = GL_FLOAT;
+        numElems = 2*4;
+        break;
+    case GL_FLOAT_MAT3x2:
+        elemType = GL_FLOAT;
+        numElems = 3*2;
+        break;
+    case GL_FLOAT_MAT3x4:
+        elemType = GL_FLOAT;
+        numElems = 3*4;
+        break;
+    case GL_FLOAT_MAT4x2:
+        elemType = GL_FLOAT;
+        numElems = 4*2;
+        break;
+    case GL_FLOAT_MAT4x3:
+        elemType = GL_FLOAT;
+        numElems = 4*3;
+        break;
+    case GL_DOUBLE_MAT2:
+        elemType = GL_DOUBLE;
+        numElems = 2*2;
+        break;
+    case GL_DOUBLE_MAT3:
+        elemType = GL_DOUBLE;
+        numElems = 3*3;
+        break;
+    case GL_DOUBLE_MAT4:
+        elemType = GL_DOUBLE;
+        numElems = 4*4;
+        break;
+    case GL_DOUBLE_MAT2x3:
+        elemType = GL_DOUBLE;
+        numElems = 2*3;
+        break;
+    case GL_DOUBLE_MAT2x4:
+        elemType = GL_DOUBLE;
+        numElems = 2*4;
+        break;
+    case GL_DOUBLE_MAT3x2:
+        elemType = GL_DOUBLE;
+        numElems = 3*2;
+        break;
+    case GL_DOUBLE_MAT3x4:
+        elemType = GL_DOUBLE;
+        numElems = 3*4;
+        break;
+    case GL_DOUBLE_MAT4x2:
+        elemType = GL_DOUBLE;
+        numElems = 4*2;
+        break;
+    case GL_DOUBLE_MAT4x3:
+        elemType = GL_DOUBLE;
+        numElems = 4*3;
+        break;
+    case GL_SAMPLER_1D:
+    case GL_SAMPLER_2D:
+    case GL_SAMPLER_3D:
+    case GL_SAMPLER_CUBE:
+    case GL_SAMPLER_1D_SHADOW:
+    case GL_SAMPLER_2D_SHADOW:
+    case GL_SAMPLER_1D_ARRAY:
+    case GL_SAMPLER_2D_ARRAY:
+    case GL_SAMPLER_CUBE_MAP_ARRAY:
+    case GL_SAMPLER_1D_ARRAY_SHADOW:
+    case GL_SAMPLER_2D_ARRAY_SHADOW:
+    case GL_SAMPLER_2D_MULTISAMPLE:
+    case GL_SAMPLER_2D_MULTISAMPLE_ARRAY:
+    case GL_SAMPLER_CUBE_SHADOW:
+    case GL_SAMPLER_CUBE_MAP_ARRAY_SHADOW:
+    case GL_SAMPLER_BUFFER:
+    case GL_SAMPLER_2D_RECT:
+    case GL_SAMPLER_2D_RECT_SHADOW:
+    case GL_INT_SAMPLER_1D:
+    case GL_INT_SAMPLER_2D:
+    case GL_INT_SAMPLER_3D:
+    case GL_INT_SAMPLER_CUBE:
+    case GL_INT_SAMPLER_1D_ARRAY:
+    case GL_INT_SAMPLER_2D_ARRAY:
+    case GL_INT_SAMPLER_CUBE_MAP_ARRAY:
+    case GL_INT_SAMPLER_2D_MULTISAMPLE:
+    case GL_INT_SAMPLER_2D_MULTISAMPLE_ARRAY:
+    case GL_INT_SAMPLER_BUFFER:
+    case GL_INT_SAMPLER_2D_RECT:
+    case GL_UNSIGNED_INT_SAMPLER_1D:
+    case GL_UNSIGNED_INT_SAMPLER_2D:
+    case GL_UNSIGNED_INT_SAMPLER_3D:
+    case GL_UNSIGNED_INT_SAMPLER_CUBE:
+    case GL_UNSIGNED_INT_SAMPLER_1D_ARRAY:
+    case GL_UNSIGNED_INT_SAMPLER_2D_ARRAY:
+    case GL_UNSIGNED_INT_SAMPLER_CUBE_MAP_ARRAY:
+    case GL_UNSIGNED_INT_SAMPLER_2D_MULTISAMPLE:
+    case GL_UNSIGNED_INT_SAMPLER_2D_MULTISAMPLE_ARRAY:
+    case GL_UNSIGNED_INT_SAMPLER_BUFFER:
+    case GL_UNSIGNED_INT_SAMPLER_2D_RECT:
+        elemType = GL_INT;
+        numElems = 1;
+        break;
+    default:
+        os::log("apitrace: warning: %s: unknown GLenum 0x%04X\n", __FUNCTION__, type);
+        elemType = GL_NONE;
+        numElems = 0;
+        return;
+    }
+}
+    
 static inline size_t
 __glArrayPointer_size(GLint size, GLenum type, GLsizei stride, GLsizei maxIndex)
 {
@@ -87,6 +295,8 @@ __glArrayPointer_size(GLint size, GLenum type, GLsizei stride, GLsizei maxIndex)
 #define __glFogCoordPointer_size(type, stride, maxIndex) __glArrayPointer_size(1, type, stride, maxIndex)
 #define __glSecondaryColorPointer_size(size, type, stride, maxIndex) __glArrayPointer_size(size, type, stride, maxIndex)
 #define __glVertexAttribPointer_size(size, type, normalized, stride, maxIndex) __glArrayPointer_size(size, type, stride, maxIndex)
+#define __glVertexAttribPointerARB_size(size, type, normalized, stride, maxIndex) __glArrayPointer_size(size, type, stride, maxIndex)
+#define __glVertexAttribPointerNV_size(size, type, stride, maxIndex) __glArrayPointer_size(size, type, stride, maxIndex)
 
 static inline GLuint
 __glDrawArrays_maxindex(GLint first, GLsizei count)
@@ -108,6 +318,7 @@ __glDrawElementsBaseVertex_maxindex(GLsizei count, GLenum type, const GLvoid *in
     if (!count) {
         return 0;
     }
+
     __glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &__element_array_buffer);
     if (__element_array_buffer) {
         // Read indices from index buffer object
@@ -150,7 +361,7 @@ __glDrawElementsBaseVertex_maxindex(GLsizei count, GLenum type, const GLvoid *in
             }
         }
     } else {
-        OS::DebugMessage("apitrace: warning: %s: unknown GLenum 0x%04X\n", __FUNCTION__, type);
+        os::log("apitrace: warning: %s: unknown GLenum 0x%04X\n", __FUNCTION__, type);
     }
 
     if (__element_array_buffer) {
@@ -168,11 +379,16 @@ __glDrawElementsBaseVertex_maxindex(GLsizei count, GLenum type, const GLvoid *in
 #define __glDrawRangeElements_maxindex(start, end, count, type, indices) __glDrawElements_maxindex(count, type, indices)
 #define __glDrawRangeElementsEXT_maxindex __glDrawRangeElements_maxindex
 
+/* FIXME take in consideration instancing */
 #define __glDrawArraysInstanced_maxindex(first, count, primcount) __glDrawArrays_maxindex(first, count)
 #define __glDrawElementsInstanced_maxindex(count, type, indices, primcount) __glDrawElements_maxindex(count, type, indices)
 #define __glDrawElementsInstancedBaseVertex_maxindex(count, type, indices, primcount, basevertex) __glDrawElementsBaseVertex_maxindex(count, type, indices, basevertex)
 #define __glDrawRangeElementsInstanced_maxindex(start, end, count, type, indices, primcount) __glDrawRangeElements_maxindex(start, end, count, type, indices)
 #define __glDrawRangeElementsInstancedBaseVertex_maxindex(start, end, count, type, indices, primcount, basevertex) __glDrawRangeElementsBaseVertex_maxindex(start, end, count, type, indices, basevertex)
+
+#define __glDrawArraysInstancedBaseInstance_maxindex(first, count, primcount, baseinstance) __glDrawArrays_maxindex(first, count)
+#define __glDrawElementsInstancedBaseInstance_maxindex(count, type, indices, primcount, baseinstance) __glDrawElements_maxindex(count, type, indices)
+#define __glDrawElementsInstancedBaseVertexBaseInstance_maxindex(count, type, indices, primcount, basevertex, baseinstance) __glDrawElementsBaseVertex_maxindex(count, type, indices, basevertex)
 
 #define __glDrawArraysInstancedARB_maxindex __glDrawArraysInstanced_maxindex
 #define __glDrawElementsInstancedARB_maxindex __glDrawElementsInstanced_maxindex
@@ -181,13 +397,13 @@ __glDrawElementsBaseVertex_maxindex(GLsizei count, GLenum type, const GLvoid *in
 
 static inline GLuint
 __glDrawArraysIndirect_maxindex(const GLvoid *indirect) {
-    OS::DebugMessage("apitrace: warning: %s: unsupported\n", __FUNCTION__);
+    os::log("apitrace: warning: %s: unsupported\n", __FUNCTION__);
     return 0;
 }
 
 static inline GLuint
 __glDrawElementsIndirect_maxindex(GLenum type, const GLvoid *indirect) {
-    OS::DebugMessage("apitrace: warning: %s: unsupported\n", __FUNCTION__);
+    os::log("apitrace: warning: %s: unsupported\n", __FUNCTION__);
     return 0;
 }
 
@@ -234,19 +450,6 @@ __glCallLists_size(GLsizei n, GLenum type)
     return n*__gl_type_size(type);
 }
 
-#define __glFogfv_size __gl_param_size
-#define __glFogiv_size __gl_param_size
-
-#define __glLightfv_size __gl_param_size
-#define __glLightiv_size __gl_param_size
-
-#define __glLightModelfv_size __gl_param_size
-#define __glLightModeliv_size __glLightModelfv_size
-
-#define __glMaterialfv_size __gl_param_size
-#define __glMaterialiv_size __glMaterialfv_size
-
-
 static inline size_t
 __glMap1d_size(GLenum target, GLint stride, GLint order)
 {
@@ -274,7 +477,7 @@ __glMap1d_size(GLenum target, GLint stride, GLint order)
         channels = 4;
         break;
     default:
-        OS::DebugMessage("apitrace: warning: %s: unknown GLenum 0x%04X\n", __FUNCTION__, target);
+        os::log("apitrace: warning: %s: unknown GLenum 0x%04X\n", __FUNCTION__, target);
         return 0;
     }
 
@@ -314,7 +517,7 @@ __glMap2d_size(GLenum target, GLint ustride, GLint uorder, GLint vstride, GLint 
         channels = 4;
         break;
     default:
-        OS::DebugMessage("apitrace: warning: %s: unknown GLenum 0x%04X\n", __FUNCTION__, target);
+        os::log("apitrace: warning: %s: unknown GLenum 0x%04X\n", __FUNCTION__, target);
         return 0;
     }
 
@@ -329,64 +532,7 @@ __glMap2d_size(GLenum target, GLint ustride, GLint uorder, GLint vstride, GLint 
 
 #define __glMap2f_size __glMap2d_size
 
-#define __glGetBooleanv_size __gl_param_size
-#define __glGetDoublev_size __glGetBooleanv_size
-#define __glGetFloatv_size __glGetBooleanv_size
-#define __glGetIntegerv_size __glGetBooleanv_size
-#define __glGetInteger64v_size __glGetBooleanv_size
-#define __glGetBooleani_v_size __gl_param_size
-#define __glGetDoublei_v_size __glGetBooleanv_size
-#define __glGetFloati_v_size __glGetBooleanv_size
-#define __glGetIntegeri_v_size __glGetBooleani_v_size
-#define __glGetInteger64i_v_size __glGetBooleani_v_size
-
-#define __glGetLightfv_size __glLightfv_size
-#define __glGetLightiv_size __glLightfv_size
-
-#define __glGetMaterialfv_size __glMaterialfv_size
-#define __glGetMaterialiv_size __glMaterialfv_size
-
-
-#define __glColorTableParameterfv_size __gl_param_size
-#define __glColorTableParameteriv_size __gl_param_size
-#define __glGetColorTableParameterfv_size __gl_param_size
-#define __glGetColorTableParameteriv_size __gl_param_size
-
-#define __glConvolutionParameterfv_size __gl_param_size
-#define __glConvolutionParameteriv_size __gl_param_size
-#define __glGetConvolutionParameterfv_size __gl_param_size
-#define __glGetConvolutionParameteriv_size __gl_param_size
-
-#define __glGetHistogramParameterfv_size __gl_param_size
-#define __glGetHistogramParameteriv_size __gl_param_size
-
-#define __glGetMinmaxParameterfv_size __gl_param_size
-#define __glGetMinmaxParameteriv_size __gl_param_size
-
-#define __glGetProgramivARB_size __gl_param_size
-#define __glGetProgramivNV_size __gl_param_size
-
-#define __glGetVertexAttribdvARB_size __gl_param_size
-#define __glGetVertexAttribfvARB_size __gl_param_size
-#define __glGetVertexAttribivARB_size __gl_param_size
-#define __glGetVertexAttribdvNV_size __gl_param_size
-#define __glGetVertexAttribfvNV_size __gl_param_size
-#define __glGetVertexAttribivNV_size __gl_param_size
-
-#define __glGetQueryObjectivARB_size __gl_param_size
-#define __glGetQueryObjectuivARB_size __glGetQueryObjectivARB_size
-#define __glGetQueryivARB_size __gl_param_size
-
-#define __glPointParameterfv_size __glPointParameterfvEXT_size
-#define __glPointParameteriv_size __glPointParameterfvEXT_size
-#define __glPointParameterfvARB_size __glPointParameterfvEXT_size
-#define __glPointParameterfvEXT_size __gl_param_size
-#define __glPointParameterivNV_size __glPointParameterfvEXT_size
-
-#define __glGetFramebufferAttachmentParameteriv_size __gl_param_size
-#define __glGetFramebufferAttachmentParameterivEXT_size __gl_param_size
-
-static inline size_t
+static inline unsigned
 __gl_format_channels(GLenum format) {
     switch (format) {
     case GL_COLOR_INDEX:
@@ -402,19 +548,23 @@ __gl_format_channels(GLenum format) {
     case GL_DEPTH_STENCIL:
     case GL_LUMINANCE_ALPHA:
     case GL_RG:
+    case GL_HILO_NV:
+    case GL_DSDT_NV:
         return 2;
     case GL_RGB:
     case GL_BGR:
+    case GL_DSDT_MAG_NV:
         return 3;
     case GL_RGBA:
     case GL_BGRA:
     case GL_ABGR_EXT:
     case GL_CMYK_EXT:
+    case GL_DSDT_MAG_VIB_NV:
         return 4;
     case GL_CMYKA_EXT:
         return 5;
     default:
-        OS::DebugMessage("apitrace: warning: %s: unexpected format GLenum 0x%04X\n", __FUNCTION__, format);
+        os::log("apitrace: warning: %s: unexpected format GLenum 0x%04X\n", __FUNCTION__, format);
         return 0;
     }
 }
@@ -432,10 +582,10 @@ _align(X x, Y y) {
 }
 
 static inline size_t
-__gl_image_size(GLenum format, GLenum type, GLsizei width, GLsizei height, GLsizei depth) {
-    size_t num_channels = __gl_format_channels(format);
+__gl_image_size(GLenum format, GLenum type, GLsizei width, GLsizei height, GLsizei depth, GLboolean has_unpack_subimage) {
+    unsigned num_channels = __gl_format_channels(format);
 
-    size_t bits_per_pixel;
+    unsigned bits_per_pixel;
     switch (type) {
     case GL_BITMAP:
         bits_per_pixel = 1;
@@ -483,7 +633,7 @@ __gl_image_size(GLenum format, GLenum type, GLsizei width, GLsizei height, GLsiz
         bits_per_pixel = 64;
         break;
     default:
-        OS::DebugMessage("apitrace: warning: %s: unexpected type GLenum 0x%04X\n", __FUNCTION__, type);
+        os::log("apitrace: warning: %s: unexpected type GLenum 0x%04X\n", __FUNCTION__, type);
         bits_per_pixel = 0;
         break;
     }
@@ -495,12 +645,14 @@ __gl_image_size(GLenum format, GLenum type, GLsizei width, GLsizei height, GLsiz
     GLint skip_pixels = 0;
     GLint skip_images = 0;
 
-    __glGetIntegerv(GL_UNPACK_ALIGNMENT,    &alignment);
-    __glGetIntegerv(GL_UNPACK_ROW_LENGTH,   &row_length);
-    __glGetIntegerv(GL_UNPACK_IMAGE_HEIGHT, &image_height);
-    __glGetIntegerv(GL_UNPACK_SKIP_ROWS,    &skip_rows);
-    __glGetIntegerv(GL_UNPACK_SKIP_PIXELS,  &skip_pixels);
-    __glGetIntegerv(GL_UNPACK_SKIP_IMAGES,  &skip_images);
+    __glGetIntegerv(GL_UNPACK_ALIGNMENT, &alignment);
+    if (has_unpack_subimage) {
+        __glGetIntegerv(GL_UNPACK_ROW_LENGTH,   &row_length);
+        __glGetIntegerv(GL_UNPACK_IMAGE_HEIGHT, &image_height);
+        __glGetIntegerv(GL_UNPACK_SKIP_ROWS,    &skip_rows);
+        __glGetIntegerv(GL_UNPACK_SKIP_PIXELS,  &skip_pixels);
+        __glGetIntegerv(GL_UNPACK_SKIP_IMAGES,  &skip_images);
+    }
 
     if (row_length <= 0) {
         row_length = width;
@@ -508,7 +660,7 @@ __gl_image_size(GLenum format, GLenum type, GLsizei width, GLsizei height, GLsiz
 
     size_t row_stride = (row_length*bits_per_pixel + 7)/8;
 
-    if (bits_per_pixel < alignment*8 &&
+    if ((GLint)bits_per_pixel < alignment*8 &&
         (bits_per_pixel & 7) == 0 &&
         _is_pot(bits_per_pixel)) {
         row_stride = _align(row_stride, alignment);
@@ -532,32 +684,10 @@ __gl_image_size(GLenum format, GLenum type, GLsizei width, GLsizei height, GLsiz
     return size;
 }
 
-#define __glTexParameterfv_size __gl_param_size
-#define __glTexParameteriv_size __gl_param_size
-#define __glGetTexParameterfv_size __gl_param_size
-#define __glGetTexParameteriv_size __gl_param_size
-#define __glGetTexLevelParameterfv_size __gl_param_size
-#define __glGetTexLevelParameteriv_size __gl_param_size
-#define __glTexParameterIiv_size __gl_param_size
-#define __glTexParameterIuiv_size __gl_param_size
-#define __glGetTexParameterIiv_size __gl_param_size
-#define __glGetTexParameterIuiv_size __gl_param_size
-
-#define __glTexEnvfv_size __gl_param_size
-#define __glTexEnviv_size __gl_param_size
-#define __glGetTexEnvfv_size __gl_param_size
-#define __glGetTexEnviv_size __gl_param_size
-
-#define __glTexGendv_size __gl_param_size
-#define __glTexGenfv_size __gl_param_size
-#define __glTexGeniv_size __gl_param_size
-#define __glGetTexGendv_size __gl_param_size
-#define __glGetTexGenfv_size __gl_param_size
-#define __glGetTexGeniv_size __gl_param_size
-
-#define __glTexImage3D_size(format, type, width, height, depth) __gl_image_size(format, type, width, height, depth)
-#define __glTexImage2D_size(format, type, width, height)        __gl_image_size(format, type, width, height, 1)
-#define __glTexImage1D_size(format, type, width)                __gl_image_size(format, type, width, 1, 1)
+// note that can_unpack_subimage() is generated by gltrace.py
+#define __glTexImage3D_size(format, type, width, height, depth) __gl_image_size(format, type, width, height, depth, can_unpack_subimage())
+#define __glTexImage2D_size(format, type, width, height)        __gl_image_size(format, type, width, height, 1, can_unpack_subimage())
+#define __glTexImage1D_size(format, type, width)                __gl_image_size(format, type, width, 1, 1, can_unpack_subimage())
 
 #define __glTexSubImage3D_size(format, type, width, height, depth) __glTexImage3D_size(format, type, width, height, depth)
 #define __glTexSubImage2D_size(format, type, width, height)        __glTexImage2D_size(format, type, width, height)
@@ -608,24 +738,45 @@ __glClearBuffer_size(GLenum buffer)
     case GL_STENCIL:
         return 1;
     default:
-        OS::DebugMessage("apitrace: warning: %s: unexpected buffer GLenum 0x%04X\n", __FUNCTION__, buffer);
+        os::log("apitrace: warning: %s: unexpected buffer GLenum 0x%04X\n", __FUNCTION__, buffer);
         return 0;
     }
 }
 
 /* 
- * 0 terminated integer/float attribute list.
+ * attribute list, terminated by the given terminator.
  */
 template<class T>
 static inline size_t
-__AttribList_size(const T *pAttribList)
+__AttribList_size(const T *pAttribList, const T terminator = static_cast<T>(0))
 {
     size_t size = 0;
 
     if (pAttribList) {
         do {
             ++size;
-        } while (*pAttribList++);
+        } while (*pAttribList++ != terminator);
+    }
+
+    return size;
+}
+
+
+/*
+ * (key, value) attribute list, terminated by the given terminator.
+ */
+template<class T>
+static inline size_t
+__AttribPairList_size(const T *pAttribList, const T terminator = static_cast<T>(0))
+{
+    size_t size = 0;
+
+    if (pAttribList) {
+        while (pAttribList[size] != terminator) {
+            size += 2;
+        }
+        // terminator also counts
+        ++size;
     }
 
     return size;
