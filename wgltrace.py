@@ -129,7 +129,7 @@ class WglTracer(GlTracer):
             print '            __result = (const GLubyte*)"2.1";'
             print '            break;'
             print '        case GL_SHADING_LANGUAGE_VERSION:'
-            print '            __result = (const GLubyte*)"1.2";'
+            print '            __result = (const GLubyte*)"1.20";'
             print '            break;'
             print '        case GL_EXTENSIONS:'
             print '            __result = (const GLubyte*)"%s";' % ' '.join(self.extensions)
