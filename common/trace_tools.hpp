@@ -29,22 +29,15 @@
 
 #include <stdlib.h>
 
-
-namespace os {
-    class Path;
-};
+#include "trace_api.hpp"
 
 
 namespace trace {
 
 
-os::Path
-findFile(const char *relPath, // path relative to the current program
-         const char *absPath, // absolute path
-         bool verbose);
-
 int
-traceProgram(char * const *argv,
+traceProgram(API api,
+             char * const *argv,
              const char *output = NULL,
              bool verbose = false);
 

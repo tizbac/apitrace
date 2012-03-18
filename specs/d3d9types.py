@@ -405,7 +405,7 @@ D3DRENDERSTATEVALUE = Polymorphic(DWORD, "State", [
 ])
 
 D3DRENDERSTATETYPE = Enum("D3DRENDERSTATETYPE", [
-    expr for expr, types in D3DRENDERSTATEVALUE.switch_types
+    expr for expr, types in D3DRENDERSTATEVALUE.switchTypes
 ])
 
 D3DTSS_TCI = Flags(DWORD, [
@@ -490,7 +490,7 @@ D3DTEXTURESTAGESTATEVALUE = Polymorphic(DWORD, "Type", [
 ])
 
 D3DTEXTURESTAGESTATETYPE = Enum("D3DTEXTURESTAGESTATETYPE", [
-    expr for expr, types in D3DTEXTURESTAGESTATEVALUE.switch_types
+    expr for expr, types in D3DTEXTURESTAGESTATEVALUE.switchTypes
 ])
 
 D3DTEXTUREFILTERTYPE = Enum("D3DTEXTUREFILTERTYPE", [
@@ -520,7 +520,7 @@ D3DSAMPLERSTATEVALUE = Polymorphic(DWORD, "Type", [
 ])
 
 D3DSAMPLERSTATETYPE = Enum("D3DSAMPLERSTATETYPE", [
-    expr for expr, types in D3DSAMPLERSTATEVALUE.switch_types
+    expr for expr, types in D3DSAMPLERSTATEVALUE.switchTypes
 ])
 
 D3DPV = Flags(DWORD, [
@@ -737,6 +737,7 @@ D3DFORMAT = Enum("D3DFORMAT", [
     "D3DFMT_A32B32G32R32F",
     "D3DFMT_CxV8U8",
     "D3DFMT_A1",
+    "D3DFMT_A2B10G10R10_XR_BIAS",
     "D3DFMT_BINARYBUFFER",
 
     # Unofficial formats
@@ -874,7 +875,7 @@ D3DLOCK = Flags(DWORD, [
 D3DVERTEXBUFFER_DESC = Struct("D3DVERTEXBUFFER_DESC", [
     (D3DFORMAT, "Format"),
     (D3DRESOURCETYPE, "Type"),
-    (DWORD, "Usage"),
+    (D3DUSAGE, "Usage"),
     (D3DPOOL, "Pool"),
     (UINT, "Size"),
     (DWORD, "FVF"),
@@ -883,7 +884,7 @@ D3DVERTEXBUFFER_DESC = Struct("D3DVERTEXBUFFER_DESC", [
 D3DINDEXBUFFER_DESC = Struct("D3DINDEXBUFFER_DESC", [
     (D3DFORMAT, "Format"),
     (D3DRESOURCETYPE, "Type"),
-    (DWORD, "Usage"),
+    (D3DUSAGE, "Usage"),
     (D3DPOOL, "Pool"),
     (UINT, "Size"),
 ])
@@ -891,7 +892,7 @@ D3DINDEXBUFFER_DESC = Struct("D3DINDEXBUFFER_DESC", [
 D3DSURFACE_DESC = Struct("D3DSURFACE_DESC", [
     (D3DFORMAT, "Format"),
     (D3DRESOURCETYPE, "Type"),
-    (DWORD, "Usage"),
+    (D3DUSAGE, "Usage"),
     (D3DPOOL, "Pool"),
     (D3DMULTISAMPLE_TYPE, "MultiSampleType"),
     (DWORD, "MultiSampleQuality"),
@@ -902,7 +903,7 @@ D3DSURFACE_DESC = Struct("D3DSURFACE_DESC", [
 D3DVOLUME_DESC = Struct("D3DVOLUME_DESC", [
     (D3DFORMAT, "Format"),
     (D3DRESOURCETYPE, "Type"),
-    (DWORD, "Usage"),
+    (D3DUSAGE, "Usage"),
     (D3DPOOL, "Pool"),
     (UINT, "Width"),
     (UINT, "Height"),

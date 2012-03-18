@@ -98,12 +98,17 @@ GLrenderbuffer = Handle("renderbuffer", GLuint)
 GLfragmentShaderATI = Handle("fragmentShaderATI", GLuint)
 GLarray = Handle("array", GLuint)
 GLregion = Handle("region", GLuint)
-GLmap = GLpointer
 GLpipeline = Handle("pipeline", GLuint)
 GLsampler = Handle("sampler", GLuint)
 GLfeedback = Handle("feedback", GLuint)
 
-GLsync_ = Opaque("GLsync")
+# GL mappings are pointers to linear memory regions.
+#
+# The map length is not always available in the function prototype, and must be
+# reconstructed from other state.
+GLmap = LinearPointer(GLvoid, "length")
+
+GLsync_ = IntPointer("GLsync")
 GLsync = Handle("sync", GLsync_)
 
 GLenum = Enum("GLenum", [
@@ -111,11 +116,8 @@ GLenum = Enum("GLenum", [
 ])
 
 # Some functions take GLenum disguised as GLint, and need special treatment so
-# that symbolic names are traced correctly.  Apple noticed and fixed it in the
-# gl.h header, which further complicates things.  C++ typechecking rules force
-# the wrappers to match the prototype precisely, so the precise type is defined
-# in glimports.hpp
-GLenum_int = Alias("GLenum_int", GLenum)
+# that symbolic names are traced correctly.
+GLenum_int = Alias("GLint", GLenum)
 
 GLenum_mode = FakeEnum(GLenum, [
     "GL_POINTS",                         # 0x0000

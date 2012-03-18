@@ -53,6 +53,8 @@ public:
     static bool isSnappyCompressed(const std::string &filename);
     static File *createZLib(void);
     static File *createSnappy(void);
+    static File *createForRead(const char *filename);
+    static File *createForWrite(const char *filename);
 public:
     File(const std::string &filename = std::string(),
          File::Mode mode = File::Read);
@@ -63,7 +65,7 @@ public:
 
     bool open(const std::string &filename, File::Mode mode);
     bool write(const void *buffer, size_t length);
-    bool read(void *buffer, size_t length);
+    size_t read(void *buffer, size_t length);
     void close();
     void flush(void);
     int getc();
@@ -76,7 +78,7 @@ public:
 protected:
     virtual bool rawOpen(const std::string &filename, File::Mode mode) = 0;
     virtual bool rawWrite(const void *buffer, size_t length) = 0;
-    virtual bool rawRead(void *buffer, size_t length) = 0;
+    virtual size_t rawRead(void *buffer, size_t length) = 0;
     virtual int rawGetc() = 0;
     virtual void rawClose() = 0;
     virtual void rawFlush() = 0;
@@ -117,10 +119,10 @@ inline bool File::write(const void *buffer, size_t length)
     return rawWrite(buffer, length);
 }
 
-inline bool File::read(void *buffer, size_t length)
+inline size_t File::read(void *buffer, size_t length)
 {
     if (!m_isOpened || m_mode != File::Read) {
-        return false;
+        return 0;
     }
     return rawRead(buffer, length);
 }

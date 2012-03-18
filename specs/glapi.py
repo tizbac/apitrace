@@ -47,7 +47,7 @@ def GlFunction(*args, **kwargs):
 glapi = API('GL')
 
 
-glapi.add_functions([
+glapi.addFunctions([
     # GL_VERSION_1_0
     GlFunction(Void, "glCullFace", [(GLenum, "mode")]),
     GlFunction(Void, "glFrontFace", [(GLenum, "mode")]),
@@ -2142,7 +2142,7 @@ glapi.add_functions([
     GlFunction(Void, "glPrimitiveRestartIndexNV", [(GLuint, "index")]),
 
     # GL_ATI_map_object_buffer
-    GlFunction(GLmap, "glMapObjectBufferATI", [(GLbuffer, "buffer")]),
+    GlFunction(GLpointer, "glMapObjectBufferATI", [(GLbuffer, "buffer")]),
     GlFunction(Void, "glUnmapObjectBufferATI", [(GLbuffer, "buffer")]),
 
     # GL_ATI_separate_stencil

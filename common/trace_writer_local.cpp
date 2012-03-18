@@ -31,9 +31,10 @@
 #include <string.h>
 
 #include "os.hpp"
-#include "os_path.hpp"
+#include "os_thread.hpp"
+#include "os_string.hpp"
 #include "trace_file.hpp"
-#include "trace_writer.hpp"
+#include "trace_writer_local.hpp"
 #include "trace_format.hpp"
 
 
@@ -74,7 +75,7 @@ LocalWriter::~LocalWriter()
 
 void
 LocalWriter::open(void) {
-    os::Path szFileName;
+    os::String szFileName;
 
     const char *lpFileName;
 
@@ -82,22 +83,22 @@ LocalWriter::open(void) {
     if (!lpFileName) {
         static unsigned dwCounter = 0;
 
-        os::Path process = os::getProcessName();
+        os::String process = os::getProcessName();
 #ifdef _WIN32
         process.trimExtension();
 #endif
         process.trimDirectory();
 
-        os::Path prefix = os::getCurrentDir();
+        os::String prefix = os::getCurrentDir();
         prefix.join(process);
 
         for (;;) {
             FILE *file;
 
             if (dwCounter)
-                szFileName = os::Path::format("%s.%u.trace", prefix.str(), dwCounter);
+                szFileName = os::String::format("%s.%u.trace", prefix.str(), dwCounter);
             else
-                szFileName = os::Path::format("%s.trace", prefix.str());
+                szFileName = os::String::format("%s.trace", prefix.str());
 
             lpFileName = szFileName;
             file = fopen(lpFileName, "rb");
@@ -112,7 +113,10 @@ LocalWriter::open(void) {
 
     os::log("apitrace: tracing to %s\n", lpFileName);
 
-    Writer::open(lpFileName);
+    if (!Writer::open(lpFileName)) {
+        os::log("apitrace: error: failed to open %s\n", lpFileName);
+        os::abort();
+    }
 
 #if 0
     // For debugging the exception handler
@@ -120,25 +124,39 @@ LocalWriter::open(void) {
 #endif
 }
 
+static unsigned next_thread_id = 0;
+static os::thread_specific_ptr<unsigned> thread_id_specific_ptr;
+
 unsigned LocalWriter::beginEnter(const FunctionSig *sig) {
-    os::acquireMutex();
+    mutex.lock();
     ++acquired;
 
     if (!m_file->isOpened()) {
         open();
     }
 
-    return Writer::beginEnter(sig);
+    unsigned *thread_id_ptr = thread_id_specific_ptr.get();
+    unsigned thread_id;
+    if (thread_id_ptr) {
+        thread_id = *thread_id_ptr;
+    } else {
+        thread_id = next_thread_id++;
+        thread_id_ptr = new unsigned;
+        *thread_id_ptr = thread_id;
+        thread_id_specific_ptr.reset(thread_id_ptr);
+    }
+
+    return Writer::beginEnter(sig, thread_id);
 }
 
 void LocalWriter::endEnter(void) {
     Writer::endEnter();
     --acquired;
-    os::releaseMutex();
+    mutex.unlock();
 }
 
 void LocalWriter::beginLeave(unsigned call) {
-    os::acquireMutex();
+    mutex.lock();
     ++acquired;
     Writer::beginLeave(call);
 }
@@ -146,23 +164,28 @@ void LocalWriter::beginLeave(unsigned call) {
 void LocalWriter::endLeave(void) {
     Writer::endLeave();
     --acquired;
-    os::releaseMutex();
+    mutex.unlock();
 }
 
 void LocalWriter::flush(void) {
     /*
      * Do nothing if the mutex is already acquired (e.g., if a segfault happen
-     * while writing the file) to prevent dead-lock.
+     * while writing the file) as state could be inconsistent, therefore yield
+     * inconsistent trace files and/or repeated segfaults till infinity.
      */
 
-    if (!acquired) {
-        os::acquireMutex();
+    mutex.lock();
+    if (acquired) {
+        os::log("apitrace: ignoring exception while tracing\n");
+    } else {
+        ++acquired;
         if (m_file->isOpened()) {
             os::log("apitrace: flushing trace due to an exception\n");
             m_file->flush();
         }
-        os::releaseMutex();
+        --acquired;
     }
+    mutex.unlock();
 }
 
 

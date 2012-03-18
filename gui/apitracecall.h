@@ -25,6 +25,7 @@ public:
     virtual void visit(trace::SInt *node);
     virtual void visit(trace::UInt *node);
     virtual void visit(trace::Float *node);
+    virtual void visit(trace::Double *node);
     virtual void visit(trace::String *node);
     virtual void visit(trace::Enum *e);
     virtual void visit(trace::Bitmask *bitmask);
@@ -53,23 +54,19 @@ struct ApiTraceError
 class ApiTraceEnumSignature
 {
 public:
-    ApiTraceEnumSignature(const QString &name = QString(),
-                          const QVariant &val=QVariant())\
-        : m_name(name),
-          m_value(val)
-    {}
+    ApiTraceEnumSignature(const trace::EnumSig *sig);
 
-    QVariant value() const { return m_value; }
-    QString name() const { return m_name; }
+    QString name(signed long long value) const;
+
 private:
-    QString m_name;
-    QVariant m_value;
+    typedef QList<QPair<QString, signed long long> > ValueList;
+    ValueList m_names;
 };
 
 class ApiEnum
 {
 public:
-    ApiEnum(ApiTraceEnumSignature *sig=0);
+    ApiEnum(ApiTraceEnumSignature *sig=0, signed long long value = 0);
 
     QString toString() const;
 
@@ -77,6 +74,7 @@ public:
     QString name() const;
 private:
     ApiTraceEnumSignature *m_sig;
+    signed long long m_value;
 };
 Q_DECLARE_METATYPE(ApiEnum);
 
@@ -252,6 +250,7 @@ public:
     QStringList argNames() const;
     QVector<QVariant> arguments() const;
     QVariant returnValue() const;
+    trace::CallFlags flags() const;
     QUrl helpUrl() const;
     void setHelpUrl(const QUrl &url);
     ApiTraceFrame *parentFrame()const;
@@ -284,6 +283,7 @@ private:
     ApiTraceCallSignature *m_signature;
     QVector<QVariant> m_argValues;
     QVariant m_returnValue;
+    trace::CallFlags m_flags;
     ApiTraceFrame *m_parentFrame;
 
     QVector<QVariant> m_editedValues;

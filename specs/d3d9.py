@@ -401,7 +401,7 @@ IDirect3DQuery9.methods += [
     Method(D3DQUERYTYPE, "GetType", []),
     Method(DWORD, "GetDataSize", []),
     Method(HRESULT, "Issue", [(D3DISSUE, "dwIssueFlags")]),
-    Method(HRESULT, "GetData", [Out(OpaquePointer(Void), "pData"), (DWORD, "dwSize"), (D3DGETDATA, "dwGetDataFlags")]),
+    Method(HRESULT, "GetData", [Out(Blob(Void, "dwSize"), "pData"), (DWORD, "dwSize"), (D3DGETDATA, "dwGetDataFlags")]),
 ]
 
 IDirect3D9Ex.methods += [
@@ -437,7 +437,7 @@ IDirect3DSwapChain9Ex.methods += [
 ]
 
 d3d9 = API("d3d9")
-d3d9.add_functions([
+d3d9.addFunctions([
     StdFunction(PDIRECT3D9, "Direct3DCreate9", [(UINT, "SDKVersion")], fail='NULL'),
     StdFunction(HRESULT, "Direct3DCreate9Ex", [(UINT, "SDKVersion"), Out(Pointer(PDIRECT3D9EX), "ppD3D")], fail='D3DERR_NOTAVAILABLE'),
     StdFunction(Int, "D3DPERF_BeginEvent", [(D3DCOLOR, "col"), (LPCWSTR, "wszName")], fail='-1'),

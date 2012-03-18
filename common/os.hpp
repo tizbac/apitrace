@@ -46,10 +46,6 @@
 
 namespace os {
 
-void acquireMutex(void);
-
-void releaseMutex(void);
-
 void log(const char *format, ...)
 #ifdef __GNUC__
     __attribute__ ((format (printf, 1, 2)))
@@ -73,11 +69,6 @@ void log(const char *format, ...)
     #define PRIVATE
   #endif
 #endif
-
-/**
- * Get the current time in microseconds from an unknown base.
- */
-long long getTime(void);
 
 void abort(void);
 

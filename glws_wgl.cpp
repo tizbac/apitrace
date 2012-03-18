@@ -23,7 +23,9 @@
  *
  **************************************************************************/
 
-#include "glimports.hpp"
+#include <iostream>
+
+#include "glproc.hpp"
 #include "glws.hpp"
 
 
@@ -162,6 +164,14 @@ public:
 
     void swapBuffers(void) {
         SwapBuffers(hDC);
+
+        // Drain message queue to prevent window from being considered
+        // non-responsive
+        MSG msg;
+        while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+            TranslateMessage(&msg);
+            DispatchMessage(&msg);
+        }
     }
 };
 
@@ -172,8 +182,8 @@ public:
     HGLRC hglrc;
     WglContext *shareContext;
 
-    WglContext(const Visual *vis, WglContext *share) :
-        Context(vis),
+    WglContext(const Visual *vis, Profile prof, WglContext *share) :
+        Context(vis, prof),
         hglrc(0),
         shareContext(share)
     {}
@@ -188,6 +198,21 @@ public:
 
 void
 init(void) {
+    /*
+     * OpenGL library must be loaded by the time we call GDI.
+     */
+
+    const char * libgl_filename = getenv("TRACE_LIBGL");
+
+    if (!libgl_filename) {
+        libgl_filename = "OPENGL32";
+    }
+
+    __libGlHandle = LoadLibraryA(libgl_filename);
+    if (!__libGlHandle) {
+        std::cerr << "error: unable to open " << libgl_filename << "\n";
+        exit(1);
+    }
 }
 
 void
@@ -195,7 +220,11 @@ cleanup(void) {
 }
 
 Visual *
-createVisual(bool doubleBuffer) {
+createVisual(bool doubleBuffer, Profile profile) {
+    if (profile != PROFILE_COMPAT) {
+        return NULL;
+    }
+
     Visual *visual = new Visual();
 
     visual->doubleBuffer = doubleBuffer;
@@ -210,9 +239,13 @@ createDrawable(const Visual *visual, int width, int height)
 }
 
 Context *
-createContext(const Visual *visual, Context *shareContext)
+createContext(const Visual *visual, Context *shareContext, Profile profile)
 {
-    return new WglContext(visual, dynamic_cast<WglContext *>(shareContext));
+    if (profile != PROFILE_COMPAT) {
+        return NULL;
+    }
+
+    return new WglContext(visual, profile, static_cast<WglContext *>(shareContext));
 }
 
 bool
@@ -221,8 +254,8 @@ makeCurrent(Drawable *drawable, Context *context)
     if (!drawable || !context) {
         return wglMakeCurrent(NULL, NULL);
     } else {
-        WglDrawable *wglDrawable = dynamic_cast<WglDrawable *>(drawable);
-        WglContext *wglContext = dynamic_cast<WglContext *>(context);
+        WglDrawable *wglDrawable = static_cast<WglDrawable *>(drawable);
+        WglContext *wglContext = static_cast<WglContext *>(context);
 
         if (!wglContext->hglrc) {
             wglContext->hglrc = wglCreateContext(wglDrawable->hDC);

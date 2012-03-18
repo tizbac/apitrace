@@ -30,8 +30,7 @@
 #include <stdlib.h>
 
 #include <unistd.h>
-#include <sys/time.h>
-#include <pthread.h>
+#include <sys/wait.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -45,40 +44,26 @@
 #include <mach-o/dyld.h>
 #endif
 
+#ifdef ANDROID
+#include <android/log.h>
+#endif
+
 #ifndef PATH_MAX
 #warning PATH_MAX undefined
 #define PATH_MAX 4096
 #endif
 
 #include "os.hpp"
-#include "os_path.hpp"
+#include "os_string.hpp"
 
 
 namespace os {
 
 
-static pthread_mutex_t 
-mutex = PTHREAD_MUTEX_INITIALIZER;
-
-
-void
-acquireMutex(void)
-{
-    pthread_mutex_lock(&mutex);
-}
-
-
-void
-releaseMutex(void)
-{
-    pthread_mutex_unlock(&mutex);
-}
-
-
-Path
+String
 getProcessName(void)
 {
-    Path path;
+    String path;
     size_t size = PATH_MAX;
     char *buf = path.buf(size);
 
@@ -112,10 +97,10 @@ getProcessName(void)
     return path;
 }
 
-Path
+String
 getCurrentDir(void)
 {
-    Path path;
+    String path;
     size_t size = PATH_MAX;
     char *buf = path.buf(size);
 
@@ -127,7 +112,7 @@ getCurrentDir(void)
 }
 
 bool
-Path::exists(void) const
+String::exists(void) const
 {
     struct stat st;
     int err;
@@ -143,23 +128,47 @@ Path::exists(void) const
     return true;
 }
 
+int execute(char * const * args)
+{
+    pid_t pid = fork();
+    if (pid == 0) {
+        // child
+        execvp(args[0], args);
+        fprintf(stderr, "error: failed to execute %s\n", args[0]);
+        exit(-1);
+    } else {
+        // parent
+        if (pid == -1) {
+            fprintf(stderr, "error: failed to fork\n");
+            return -1;
+        }
+        int status = -1;
+        waitpid(pid, &status, 0);
+        return status;
+    }
+}
+
+static volatile bool logging = false;
+
 void
 log(const char *format, ...)
 {
+    logging = true;
     va_list ap;
     va_start(ap, format);
     fflush(stdout);
+#ifdef ANDROID
+    __android_log_vprint(ANDROID_LOG_DEBUG, "apitrace", format, ap);
+#else
     vfprintf(stderr, format, ap);
+#endif
     va_end(ap);
+    logging = false;
 }
 
-long long
-getTime(void)
-{
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return tv.tv_usec + tv.tv_sec*1000000LL;
-}
+#if defined(__APPLE__)
+long long timeFrequency = 0LL;
+#endif
 
 void
 abort(void)
@@ -183,12 +192,22 @@ struct sigaction old_actions[NUM_SIGNALS];
 static void
 signalHandler(int sig, siginfo_t *info, void *context)
 {
+    /*
+     * There are several signals that can happen when logging to stdout/stderr.
+     * For example, SIGPIPE will be emitted if stderr is a pipe with no
+     * readers.  Therefore ignore any signal while logging by returning
+     * immediately, to prevent deadlocks.
+     */
+    if (logging) {
+        return;
+    }
+
     static int recursion_count = 0;
 
-    fprintf(stderr, "apitrace: warning: caught signal %i\n", sig);
+    log("apitrace: warning: caught signal %i\n", sig);
 
     if (recursion_count) {
-        fprintf(stderr, "apitrace: warning: recursion handling signal %i\n", sig);
+        log("apitrace: warning: recursion handling signal %i\n", sig);
     } else {
         if (gCallback) {
             ++recursion_count;
@@ -200,7 +219,7 @@ signalHandler(int sig, siginfo_t *info, void *context)
     struct sigaction *old_action;
     if (sig >= NUM_SIGNALS) {
         /* This should never happen */
-        fprintf(stderr, "error: unexpected signal %i\n", sig);
+        log("error: unexpected signal %i\n", sig);
         raise(SIGKILL);
     }
     old_action = &old_actions[sig];
@@ -210,7 +229,7 @@ signalHandler(int sig, siginfo_t *info, void *context)
         old_action->sa_sigaction(sig, info, context);
     } else {
         if (old_action->sa_handler == SIG_DFL) {
-            fprintf(stderr, "apitrace: info: taking default action for signal %i\n", sig);
+            log("apitrace: info: taking default action for signal %i\n", sig);
 
 #if 1
             struct sigaction dfl_action;
@@ -246,11 +265,26 @@ setExceptionCallback(void (*callback)(void))
 
 
         for (int sig = 1; sig < NUM_SIGNALS; ++sig) {
-            // SIGKILL and SIGSTOP can't be handled
-            if (sig != SIGKILL && sig != SIGSTOP) {
-                if (sigaction(sig,  NULL, &old_actions[sig]) >= 0) {
-                    sigaction(sig,  &new_action, NULL);
-                }
+            // SIGKILL and SIGSTOP can't be handled.
+            if (sig == SIGKILL || sig == SIGSTOP) {
+                continue;
+            }
+
+            /*
+             * SIGPIPE can be emitted when writing to stderr that is redirected
+             * to a pipe without readers.  It is also very unlikely to ocurr
+             * inside graphics APIs, and most applications where it can occur
+             * normally already ignore it.  In summary, it is unlikely that a
+             * SIGPIPE will cause abnormal termination, which it is likely that
+             * intercepting here will cause problems, so simple don't intercept
+             * it here.
+             */
+            if (sig == SIGPIPE) {
+                continue;
+            }
+
+            if (sigaction(sig,  NULL, &old_actions[sig]) >= 0) {
+                sigaction(sig,  &new_action, NULL);
             }
         }
     }

@@ -3,6 +3,7 @@
 
 #include "ui_mainwindow.h"
 
+#include "trace_api.hpp"
 #include "apitrace.h"
 
 #include <QMainWindow>
@@ -36,10 +37,11 @@ public:
     ~MainWindow();
 
 public slots:
-    void loadTrace(const QString &fileName);
+    void loadTrace(const QString &fileName, int callNum = -1);
 
 private slots:
     void callItemSelected(const QModelIndex &index);
+    void callItemActivated(const QModelIndex &index);
     void createTrace();
     void openTrace();
     void replayStart();
@@ -101,9 +103,12 @@ private:
     Ui_MainWindow m_ui;
     ShadersSourceWidget *m_sourcesWidget;
 
+    trace::API m_api;
+
     ApiTrace *m_trace;
     ApiTraceModel *m_model;
     ApiTraceFilter *m_proxyModel;
+    int m_initalCallNum;
 
     QProgressBar *m_progressBar;
 

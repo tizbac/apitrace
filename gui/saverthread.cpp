@@ -243,6 +243,11 @@ public:
         m_editedValue = new trace::Float(m_variant.toFloat());
     }
 
+    virtual void visit(trace::Double *node)
+    {
+        m_editedValue = new trace::Double(m_variant.toDouble());
+    }
+
     virtual void visit(trace::String *node)
     {
         QString str = m_variant.toString();
@@ -309,12 +314,12 @@ static void
 overwriteValue(trace::Call *call, const QVariant &val, int index)
 {
     EditVisitor visitor(val);
-    trace::Value *origValue = call->args[index];
+    trace::Value *origValue = call->args[index].value;
     origValue->visit(visitor);
 
     if (visitor.value() && origValue != visitor.value()) {
         delete origValue;
-        call->args[index] = visitor.value();
+        call->args[index].value = visitor.value();
     }
 }
 

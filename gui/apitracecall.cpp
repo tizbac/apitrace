@@ -16,7 +16,7 @@ const char * const styleSheet =
     "    font-weight:bold;\n"
     // text shadow looks great but doesn't work well in qtwebkit 4.7
     "    /*text-shadow: 0px 2px 3px #555;*/\n"
-    "    font-size: 1.2em;\n"
+    "    font-size: 1.1em;\n"
     "}\n"
     ".arg-name {\n"
     "    border: 1px solid rgb(238,206,0);\n"
@@ -105,8 +105,11 @@ apiVariantToString(const QVariant &variant, bool multiLine)
         return QLatin1String("?");
     }
 
-    if (variant.userType() == QVariant::Double) {
+    if (variant.userType() == QMetaType::Float) {
         return QString::number(variant.toFloat());
+    }
+    if (variant.userType() == QVariant::Double) {
+        return QString::number(variant.toDouble());
     }
     if (variant.userType() == QVariant::ByteArray) {
         if (variant.toByteArray().size() < 1024) {
@@ -171,6 +174,11 @@ void VariantVisitor::visit(trace::Float *node)
     m_variant = QVariant(node->value);
 }
 
+void VariantVisitor::visit(trace::Double *node)
+{
+    m_variant = QVariant(node->value);
+}
+
 void VariantVisitor::visit(trace::String *node)
 {
     m_variant = QVariant(QString::fromStdString(node->value));
@@ -184,15 +192,13 @@ void VariantVisitor::visit(trace::Enum *e)
         sig = m_loader->enumSignature(e->sig->id);
     }
     if (!sig) {
-        sig = new ApiTraceEnumSignature(
-            QString::fromStdString(e->sig->name),
-            QVariant(e->sig->value));
+        sig = new ApiTraceEnumSignature(e->sig);
         if (m_loader) {
             m_loader->addEnumSignature(e->sig->id, sig);
         }
     }
 
-    m_variant = QVariant::fromValue(ApiEnum(sig));
+    m_variant = QVariant::fromValue(ApiEnum(sig, e->value));
 }
 
 void VariantVisitor::visit(trace::Bitmask *bitmask)
@@ -221,16 +227,39 @@ void VariantVisitor::visit(trace::Pointer *ptr)
     m_variant = QVariant::fromValue(ApiPointer(ptr->value));
 }
 
+ApiTraceEnumSignature::ApiTraceEnumSignature(const trace::EnumSig *sig)
+{
+    for (const trace::EnumValue *it = sig->values;
+         it != sig->values + sig->num_values; ++it) {
+        QPair<QString, signed long long> pair;
 
-ApiEnum::ApiEnum(ApiTraceEnumSignature *sig)
-    : m_sig(sig)
+        pair.first = QString::fromStdString(it->name);
+        pair.second = it->value;
+
+        m_names.append(pair);
+    }
+}
+
+QString ApiTraceEnumSignature::name(signed long long value) const
+{
+    for (ValueList::const_iterator it = m_names.begin();
+         it != m_names.end(); ++it) {
+        if (value == it->second) {
+            return it->first;
+        }
+    }
+    return QString::fromLatin1("%1").arg(value);
+}
+
+ApiEnum::ApiEnum(ApiTraceEnumSignature *sig, signed long long value)
+    : m_sig(sig), m_value(value)
 {
 }
 
 QString ApiEnum::toString() const
 {
     if (m_sig) {
-        return m_sig->name();
+        return m_sig->name(m_value);
     }
     Q_ASSERT(!"should never happen");
     return QString();
@@ -239,7 +268,7 @@ QString ApiEnum::toString() const
 QVariant ApiEnum::value() const
 {
     if (m_sig) {
-        return m_sig->value();
+        return QVariant::fromValue(m_value);
     }
     Q_ASSERT(!"should never happen");
     return QVariant();
@@ -248,7 +277,7 @@ QVariant ApiEnum::value() const
 QString ApiEnum::name() const
 {
     if (m_sig) {
-        return m_sig->name();
+        return m_sig->name(m_value);
     }
     Q_ASSERT(!"should never happen");
     return QString();
@@ -458,6 +487,10 @@ ApiTraceState::ApiTraceState(const QVariantMap &parsedJson)
             image[QLatin1String("__normalized__")].toBool();
         int numChannels =
             image[QLatin1String("__channels__")].toInt();
+        int depth =
+            image[QLatin1String("__depth__")].toInt();
+        QString formatName =
+            image[QLatin1String("__format__")].toString();
 
         Q_ASSERT(type == QLatin1String("uint8"));
         Q_ASSERT(normalized == true);
@@ -468,6 +501,8 @@ ApiTraceState::ApiTraceState(const QVariantMap &parsedJson)
 
         ApiTexture tex;
         tex.setSize(size);
+        tex.setDepth(depth);
+        tex.setFormatName(formatName);
         tex.setNumChannels(numChannels);
         tex.setLabel(itr.key());
         tex.contentsFromBase64(dataArray);
@@ -485,6 +520,8 @@ ApiTraceState::ApiTraceState(const QVariantMap &parsedJson)
         QString type = buffer[QLatin1String("__type__")].toString();
         bool normalized = buffer[QLatin1String("__normalized__")].toBool();
         int numChannels = buffer[QLatin1String("__channels__")].toInt();
+        int depth = buffer[QLatin1String("__depth__")].toInt();
+        QString formatName = buffer[QLatin1String("__format__")].toString();
 
         Q_ASSERT(type == QLatin1String("uint8"));
         Q_ASSERT(normalized == true);
@@ -495,6 +532,8 @@ ApiTraceState::ApiTraceState(const QVariantMap &parsedJson)
 
         ApiFramebuffer fbo;
         fbo.setSize(size);
+        fbo.setDepth(depth);
+        fbo.setFormatName(formatName);
         fbo.setNumChannels(numChannels);
         fbo.setType(itr.key());
         fbo.contentsFromBase64(dataArray);
@@ -639,9 +678,9 @@ ApiTraceCall::ApiTraceCall(ApiTraceFrame *parentFrame,
     }
     m_argValues.reserve(call->args.size());
     for (int i = 0; i < call->args.size(); ++i) {
-        if (call->args[i]) {
+        if (call->args[i].value) {
             VariantVisitor argVisitor(loader);
-            call->args[i]->visit(argVisitor);
+            call->args[i].value->visit(argVisitor);
             m_argValues.append(argVisitor.variant());
             if (m_argValues[i].type() == QVariant::ByteArray) {
                 m_hasBinaryData = true;
@@ -652,6 +691,7 @@ ApiTraceCall::ApiTraceCall(ApiTraceFrame *parentFrame,
         }
     }
     m_argValues.squeeze();
+    m_flags = call->flags;
 }
 
 ApiTraceCall::~ApiTraceCall()
@@ -767,6 +807,11 @@ QVariant ApiTraceCall::returnValue() const
     return m_returnValue;
 }
 
+trace::CallFlags ApiTraceCall::flags() const
+{
+    return m_flags;
+}
+
 QUrl ApiTraceCall::helpUrl() const
 {
     return m_signature->helpUrl();
@@ -840,18 +885,28 @@ QString ApiTraceCall::toHtml() const
     if (!m_richText.isEmpty())
         return m_richText;
 
-    m_richText = QLatin1String("<div class=\"call\">");
+    m_richText += QLatin1String("<div class=\"call\">");
 
+
+    m_richText +=
+        QString::fromLatin1("%1) ")
+        .arg(m_index);
+    QString parentTip;
+    if (m_parentFrame) {
+        parentTip =
+            QString::fromLatin1("Frame %1")
+            .arg(m_parentFrame->number);
+    }
     QUrl helpUrl = m_signature->helpUrl();
     if (helpUrl.isEmpty()) {
         m_richText += QString::fromLatin1(
-            "%1) <span class=\"callName\">%2</span>(")
-                      .arg(m_index)
+            "<span class=\"callName\" title=\"%1\">%2</span>(")
+                      .arg(parentTip)
                       .arg(m_signature->name());
     } else {
         m_richText += QString::fromLatin1(
-            "%1) <span class=\"callName\"><a href=\"%2\">%3</a></span>(")
-                      .arg(m_index)
+         "<span class=\"callName\" title=\"%1\"><a href=\"%2\">%3</a></span>(")
+                      .arg(parentTip)
                       .arg(helpUrl.toString())
                       .arg(m_signature->name());
     }

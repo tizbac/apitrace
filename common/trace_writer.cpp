@@ -134,8 +134,9 @@ inline bool lookup(std::vector<bool> &map, size_t index) {
     }
 }
 
-unsigned Writer::beginEnter(const FunctionSig *sig) {
+unsigned Writer::beginEnter(const FunctionSig *sig, unsigned thread_id) {
     _writeByte(trace::EVENT_ENTER);
+    _writeUInt(thread_id);
     _writeUInt(sig->id);
     if (!lookup(functions, sig->id)) {
         _writeString(sig->name);
@@ -258,14 +259,18 @@ void Writer::writeBlob(const void *data, size_t size) {
     }
 }
 
-void Writer::writeEnum(const EnumSig *sig) {
+void Writer::writeEnum(const EnumSig *sig, signed long long value) {
     _writeByte(trace::TYPE_ENUM);
     _writeUInt(sig->id);
     if (!lookup(enums, sig->id)) {
-        _writeString(sig->name);
-        Writer::writeSInt(sig->value);
+        _writeUInt(sig->num_values);
+        for (unsigned i = 0; i < sig->num_values; ++i) {
+            _writeString(sig->values[i].name);
+            writeSInt(sig->values[i].value);
+        }
         enums[sig->id] = true;
     }
+    writeSInt(value);
 }
 
 void Writer::writeBitmask(const BitmaskSig *sig, unsigned long long value) {

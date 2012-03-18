@@ -17,6 +17,10 @@ endif ()
 # prescribed in http://www.gentoo.org/proj/en/qa/automagic.xml
 set (ENABLE_GUI "AUTO" CACHE STRING "Enable Qt GUI.")
 
+set (ENABLE_CLI true CACHE BOOL "Enable command Line interface.")
+
+set (ENABLE_EGL true CACHE BOOL "Enable EGL support.")
+
 
 ##############################################################################
 # Find dependencies
@@ -25,8 +29,16 @@ set (CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 
 set (CMAKE_USE_PYTHON_VERSION 2.7 2.6)
 
-find_package (PythonInterp REQUIRED)
-find_package (OpenGL REQUIRED)
+if (ANDROID)
+    set (ENABLE_GUI false)
+else ()
+    macro (find_host_package)
+        find_package (${ARGN})
+    endmacro()
+endif ()
+
+find_host_package (PythonInterp REQUIRED)
+find_package (Threads)
 
 if (ENABLE_GUI)
     if (NOT (ENABLE_GUI STREQUAL "AUTO"))
@@ -38,14 +50,20 @@ endif ()
 
 if (WIN32)
     find_package (DirectX)
+    set (ENABLE_EGL false)
 elseif (APPLE)
+    set (ENABLE_EGL false)
 else ()
-    find_package (X11 REQUIRED)
+    find_package (X11)
 
-    set (X11_INCLUDE_DIR ${X11_INCLUDE_DIR} ${OPENGL_INCLUDE_DIR})
-    set (X11_GL_LIB ${OPENGL_gl_LIBRARY})
+    if (X11_FOUND)
+        include_directories (${X11_INCLUDE_DIR})
+        add_definitions (-DHAVE_X11)
+    endif ()
 
-    include_directories (${X11_INCLUDE_DIR})
+    if (ENABLE_EGL)
+        add_definitions (-DHAVE_EGL)
+    endif ()
 endif ()
 
 
@@ -55,9 +73,6 @@ endif ()
 include (CheckCXXCompilerFlag)
 
 if (WIN32)
-    # MSVC & MinGW only define & use APIENTRY
-    add_definitions (-DGLAPIENTRY=__stdcall)
-
     # http://msdn.microsoft.com/en-us/library/aa383745.aspx
     add_definitions (-D_WIN32_WINNT=0x0500 -DWINVER=0x0500)
 else (WIN32)
@@ -141,14 +156,12 @@ set (ZLIB_LIBRARIES z_bundled)
 add_subdirectory (thirdparty/zlib EXCLUDE_FROM_ALL)
 
 include_directories (${ZLIB_INCLUDE_DIRS})
-link_libraries (${ZLIB_LIBRARIES})
 
 set (SNAPPY_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/snappy)
 set (SNAPPY_LIBRARIES snappy_bundled)
 add_subdirectory (thirdparty/snappy EXCLUDE_FROM_ALL)
 
 include_directories (${SNAPPY_INCLUDE_DIRS})
-link_libraries (${SNAPPY_LIBRARIES})
 
 set (PNG_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/libpng)
 set (PNG_DEFINITIONS "")
@@ -157,7 +170,16 @@ set (PNG_LIBRARIES png_bundled)
 add_subdirectory (thirdparty/libpng EXCLUDE_FROM_ALL)
 include_directories (${PNG_INCLUDE_DIR})
 add_definitions (${PNG_DEFINITIONS})
-link_libraries (${PNG_LIBRARIES})
+
+if (MSVC)
+    add_subdirectory (thirdparty/getopt EXCLUDE_FROM_ALL)
+    include_directories (${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/getopt)
+    set (GETOPT_LIBRARIES getopt_bundled)
+endif ()
+
+if (WIN32)
+    add_subdirectory (thirdparty/less)
+endif ()
 
 # The Qt website provides binaries for Windows and MacOSX, and they are
 # automatically found by cmake without any manual intervention.  The situation
@@ -170,15 +192,17 @@ link_libraries (${PNG_LIBRARIES})
 # AUTO.
 if (QT4_FOUND AND NOT QJSON_FOUND AND (ENABLE_GUI STREQUAL "AUTO"))
     add_subdirectory (thirdparty/qjson EXCLUDE_FROM_ALL)
-    set (QJSON_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/qjson)
+    set (QJSON_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty)
     set (QJSON_LIBRARY_DIRS)
     set (QJSON_LIBRARIES qjson_bundled)
     set (QJSON_FOUND TRUE)
 endif ()
 
-# For glext headers
-include_directories (${CMAKE_CURRENT_SOURCE_DIR}/thirdparty)
-
+# We use bundled headers for all Khronos APIs, to guarantee support for both
+# OpenGL and OpenGL ES at build time, because the OpenGL and OpenGL ES 1 APIs
+# are so intertwined that conditional compilation extremely difficult. This
+# also avoids missing/inconsistent declarations in system headers.
+include_directories (BEFORE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/khronos)
 
 ##############################################################################
 # Installation directories
@@ -187,22 +211,14 @@ if (WIN32 OR APPLE)
     # On Windows/MacOSX, applications are usually installed on a directory of
     # their own
     set (DOC_INSTALL_DIR doc)
+    set (LIB_INSTALL_DIR lib)
 else ()
     set (DOC_INSTALL_DIR share/doc/${CMAKE_PROJECT_NAME})
-endif ()
-
-set (LIB_INSTALL_DIR lib/apitrace)
-
-if (APPLE)
-    # MacOSX uses fat binaries, so no need to have per-architecture wrapper
-    # directories
-    set (LIB_ARCH_INSTALL_DIR ${LIB_INSTALL_DIR})
-else ()
-    set (LIB_ARCH_INSTALL_DIR ${LIB_INSTALL_DIR}/${CMAKE_SYSTEM_PROCESSOR})
+    set (LIB_INSTALL_DIR lib/${CMAKE_PROJECT_NAME})
 endif ()
 
 set(SCRIPTS_INSTALL_DIR ${LIB_INSTALL_DIR}/scripts)
-set(WRAPPER_INSTALL_DIR ${LIB_ARCH_INSTALL_DIR}/wrappers)
+set(WRAPPER_INSTALL_DIR ${LIB_INSTALL_DIR}/wrappers)
 
 # Expose the binary/install directories to source
 #
@@ -212,7 +228,6 @@ set(WRAPPER_INSTALL_DIR ${LIB_ARCH_INSTALL_DIR}/wrappers)
 add_definitions(
     -DAPITRACE_BINARY_DIR="${CMAKE_BINARY_DIR}"
     -DAPITRACE_INSTALL_PREFIX="${CMAKE_INSTALL_PREFIX}"
-    -DAPITRACE_SCRIPTS_INSTALL_DIR="${CMAKE_INSTALL_PREFIX}/${SCRIPTS_INSTALL_DIR}"
     -DAPITRACE_WRAPPER_INSTALL_DIR="${CMAKE_INSTALL_PREFIX}/${WRAPPER_INSTALL_DIR}"
 )
 
@@ -221,6 +236,7 @@ add_definitions(
 # Common libraries / utilities
 
 include_directories (
+    ${CMAKE_CURRENT_BINARY_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/common
 )
@@ -228,8 +244,13 @@ include_directories (
 add_custom_command (
     OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/glproc.hpp
     COMMAND ${PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/glproc.py > ${CMAKE_CURRENT_BINARY_DIR}/glproc.hpp
-    DEPENDS glproc.py dispatch.py specs/wglapi.py specs/glxapi.py specs/cglapi.py specs/glapi.py specs/gltypes.py specs/stdapi.py
+    DEPENDS glproc.py dispatch.py specs/wglapi.py specs/glxapi.py specs/cglapi.py specs/eglapi.py specs/glesapi.py specs/glapi.py specs/gltypes.py specs/stdapi.py
 )
+
+# Wrap glproc.hpp as a target to prevent the command from being executed
+# multiple times simulatenously, when the targets that depend on it are built
+# in parallel.
+add_custom_target (glproc DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/glproc.hpp)
 
 if (WIN32)
     set (os os_win32.cpp)
@@ -244,15 +265,21 @@ else ()
 endif ()
 
 add_library (common STATIC
+    common/trace_callset.cpp
+    common/trace_dump.cpp
     common/trace_file.cpp
+    common/trace_file_read.cpp
+    common/trace_file_write.cpp
     common/trace_file_zlib.cpp
     common/trace_file_snappy.cpp
     common/trace_model.cpp
     common/trace_parser.cpp
+    common/trace_parser_flags.cpp
     common/trace_writer.cpp
     common/trace_writer_local.cpp
     common/trace_writer_model.cpp
     common/trace_loader.cpp
+    common/trace_resource.cpp
     common/trace_tools_trace.cpp
     common/image.cpp
     common/image_bmp.cpp
@@ -262,11 +289,14 @@ add_library (common STATIC
 )
 
 set_target_properties (common PROPERTIES
+    COMPILE_DEFINITIONS APITRACE_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
     # Ensure it can be statically linked in shared libraries
     COMPILE_FLAGS "${CMAKE_SHARED_LIBRARY_CXX_FLAGS}"
 )
 
-link_libraries (common)
+if (ANDROID)
+    target_link_libraries (common log)
+endif ()
 
 
 ##############################################################################
@@ -287,6 +317,11 @@ if (WIN32)
             DEPENDS ddrawtrace.py trace.py specs/d3d.py specs/d3dtypes.py specs/d3dcaps.py specs/ddraw.py specs/winapi.py specs/stdapi.py
         )
         add_library (ddraw MODULE specs/ddraw.def ddrawtrace.cpp)
+        target_link_libraries (ddraw
+            common
+            ${ZLIB_LIBRARIES}
+            ${SNAPPY_LIBRARIES}
+        )
         set_target_properties (ddraw
             PROPERTIES PREFIX ""
             RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/wrappers
@@ -304,6 +339,11 @@ if (WIN32)
             DEPENDS d3d8trace.py trace.py specs/d3d8.py specs/d3d8types.py specs/d3d8caps.py specs/winapi.py specs/stdapi.py
         )
         add_library (d3d8 MODULE specs/d3d8.def d3d8trace.cpp d3dshader.cpp)
+        target_link_libraries (d3d8
+            common
+            ${ZLIB_LIBRARIES}
+            ${SNAPPY_LIBRARIES}
+        )
         set_target_properties (d3d8
             PROPERTIES PREFIX ""
             RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/wrappers
@@ -321,6 +361,11 @@ if (WIN32)
             DEPENDS d3d9trace.py trace.py specs/d3d9.py specs/d3d9types.py specs/d3d9caps.py specs/winapi.py specs/stdapi.py
         )
         add_library (d3d9 MODULE specs/d3d9.def d3d9trace.cpp d3dshader.cpp)
+        target_link_libraries (d3d9
+            common
+            ${ZLIB_LIBRARIES}
+            ${SNAPPY_LIBRARIES}
+        )
         set_target_properties (d3d9
             PROPERTIES PREFIX ""
             RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/wrappers
@@ -338,6 +383,11 @@ if (WIN32)
             DEPENDS d3d10trace.py trace.py specs/d3d10misc.py specs/d3d10.py specs/dxgi.py specs/dxgitype.py specs/dxgiformat.py specs/winapi.py specs/stdapi.py
         )
         add_library (d3d10 MODULE specs/d3d10.def d3d10trace.cpp)
+        target_link_libraries (d3d10
+            common
+            ${ZLIB_LIBRARIES}
+            ${SNAPPY_LIBRARIES}
+        )
         set_target_properties (d3d10
             PROPERTIES PREFIX ""
             RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/wrappers
@@ -355,7 +405,13 @@ if (WIN32)
     add_library (wgltrace MODULE specs/opengl32.def
         wgltrace.cpp
         glcaps.cpp
-        ${CMAKE_CURRENT_BINARY_DIR}/glproc.hpp
+        glproc_gl.cpp
+    )
+    add_dependencies (wgltrace glproc)
+    target_link_libraries (wgltrace
+        common
+        ${ZLIB_LIBRARIES}
+        ${SNAPPY_LIBRARIES}
     )
     set_target_properties (wgltrace PROPERTIES
         PREFIX ""
@@ -376,8 +432,10 @@ elseif (APPLE)
     add_library (cgltrace SHARED
         cgltrace.cpp
         glcaps.cpp
-        ${CMAKE_CURRENT_BINARY_DIR}/glproc.hpp
+        glproc_gl.cpp
     )
+
+    add_dependencies (cgltrace glproc)
 
     set_target_properties (cgltrace PROPERTIES
         # OpenGL framework name
@@ -388,10 +446,16 @@ elseif (APPLE)
         LIBRARY_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/wrappers
     )
 
-    target_link_libraries (cgltrace dl)
+    target_link_libraries (cgltrace
+        common
+        ${ZLIB_LIBRARIES}
+        ${SNAPPY_LIBRARIES}
+        ${CMAKE_THREAD_LIBS_INIT}
+        dl
+    )
 
     install (TARGETS cgltrace LIBRARY DESTINATION ${WRAPPER_INSTALL_DIR})
-else ()
+elseif (X11_FOUND)
     # libGL.so
     add_custom_command (
         OUTPUT glxtrace.cpp
@@ -400,11 +464,12 @@ else ()
     )
 
     add_library (glxtrace SHARED
-        ${CMAKE_CURRENT_BINARY_DIR}/glproc.hpp
         glxtrace.cpp
         glcaps.cpp
-        glsnapshot.cpp
+        glproc_gl.cpp
     )
+
+    add_dependencies (glxtrace glproc)
 
     set_target_properties (glxtrace PROPERTIES
         # avoid the default "lib" prefix
@@ -416,11 +481,61 @@ else ()
         LIBRARY_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/wrappers
     )
 
-    target_link_libraries (glxtrace dl ${X11_X11_LIB})
+    target_link_libraries (glxtrace
+        common
+        ${ZLIB_LIBRARIES}
+        ${SNAPPY_LIBRARIES}
+        ${X11_X11_LIB}
+        ${CMAKE_THREAD_LIBS_INIT}
+        dl
+    )
 
     install (TARGETS glxtrace LIBRARY DESTINATION ${WRAPPER_INSTALL_DIR})
 endif ()
 
+
+if (ENABLE_EGL AND NOT WIN32 AND NOT APPLE)
+    # libEGL.so/libGL.so
+    add_custom_command (
+        OUTPUT egltrace.cpp
+        COMMAND ${PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/egltrace.py > ${CMAKE_CURRENT_BINARY_DIR}/egltrace.cpp
+        DEPENDS egltrace.py gltrace.py trace.py specs/eglapi.py specs/glesapi.py specs/glapi.py specs/glparams.py specs/gltypes.py specs/stdapi.py
+    )
+
+    add_library (egltrace SHARED
+        egltrace.cpp
+        glcaps.cpp
+        glproc_egl.cpp
+    )
+
+    add_dependencies (egltrace glproc)
+
+    set_property (
+        TARGET egltrace
+        APPEND
+        PROPERTY COMPILE_DEFINITIONS "TRACE_EGL"
+    )
+
+    set_target_properties (egltrace PROPERTIES
+        # avoid the default "lib" prefix
+        PREFIX ""
+        LINK_FLAGS "-Wl,-Bsymbolic -Wl,-Bsymbolic-functions"
+        # Prevent symbol relocations internal to our wrapper library to be
+        # overwritten by the application.
+        RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/wrappers
+        LIBRARY_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/wrappers
+    )
+
+    target_link_libraries (egltrace
+        common
+        ${ZLIB_LIBRARIES}
+        ${SNAPPY_LIBRARIES}
+        ${CMAKE_THREAD_LIBS_INIT}
+        dl
+    )
+
+    install (TARGETS egltrace LIBRARY DESTINATION ${WRAPPER_INSTALL_DIR})
+endif ()
 
 ##############################################################################
 # API retracers
@@ -437,60 +552,121 @@ add_custom_command (
     DEPENDS glstate.py specs/glparams.py specs/gltypes.py specs/stdapi.py
 )
 
-include_directories (
-    ${CMAKE_CURRENT_BINARY_DIR}
-    ${OPENGL_INCLUDE_PATH}
-)
-
-add_executable (glretrace
+set (retrace_sources
     glretrace_gl.cpp
     glretrace_cgl.cpp
     glretrace_glx.cpp
     glretrace_wgl.cpp
+    glretrace_egl.cpp
     glretrace_main.cpp
     glstate.cpp
     glstate_params.cpp
     retrace.cpp
     retrace_stdc.cpp
     glws.cpp
-    ${glws_os}
-    ${CMAKE_CURRENT_BINARY_DIR}/glproc.hpp
 )
 
-set_property (
-    TARGET glretrace
-    APPEND
-    PROPERTY COMPILE_DEFINITIONS "RETRACE"
-)
-
-target_link_libraries (glretrace
-    common
-)
-
-if (WIN32)
-    target_link_libraries (glretrace ${OPENGL_gl_LIBRARY})
-elseif (APPLE)
-    target_link_libraries (glretrace
-        "-framework Cocoa"
-        "-framework ApplicationServices" # CGS*
-        ${OPENGL_gl_LIBRARY} # CGL*
+if (WIN32 OR APPLE OR X11_FOUND)
+    add_executable (glretrace
+        ${retrace_sources}
+        ${glws_os}
+        glproc_gl.cpp
     )
-else ()
-    target_link_libraries (glretrace ${OPENGL_gl_LIBRARY} ${X11_X11_LIB})
+
+    add_dependencies (glretrace glproc)
+
+    set_property (
+        TARGET glretrace
+        APPEND
+        PROPERTY COMPILE_DEFINITIONS "RETRACE"
+    )
+
+    target_link_libraries (glretrace
+        common
+        ${PNG_LIBRARIES}
+        ${ZLIB_LIBRARIES}
+        ${SNAPPY_LIBRARIES}
+    )
+
+    if (WIN32)
+    else ()
+        if (APPLE)
+            target_link_libraries (glretrace
+                "-framework Cocoa"
+                "-framework ApplicationServices" # CGS*
+                #"-framework OpenGL" # CGL*
+            )
+        else ()
+            target_link_libraries (glretrace ${X11_X11_LIB})
+        endif ()
+
+        target_link_libraries (glretrace
+            # gdb doesn't like when pthreads is loaded through dlopen (which happens
+            # when dlopen'ing libGL), so link pthreads to avoid this issue.  See also
+            # http://stackoverflow.com/questions/2702628/gdb-cannot-find-new-threads-generic-error
+            ${CMAKE_THREAD_LIBS_INIT}
+            dl
+        )
+
+        if (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+            target_link_libraries (glretrace rt)
+        endif ()
+
+    endif ()
+
+    install (TARGETS glretrace RUNTIME DESTINATION bin) 
 endif ()
 
-install (TARGETS glretrace RUNTIME DESTINATION bin) 
+if (ENABLE_EGL AND X11_FOUND AND NOT WIN32 AND NOT APPLE)
+    add_executable (eglretrace
+        ${retrace_sources}
+        glws_egl_xlib.cpp
+        glproc_egl.cpp
+    )
+
+    add_dependencies (eglretrace glproc)
+
+    set_property (
+        TARGET eglretrace
+        APPEND
+        PROPERTY COMPILE_DEFINITIONS "RETRACE"
+        PROPERTY COMPILE_DEFINITIONS "TRACE_EGL"
+    )
+
+    target_link_libraries (eglretrace
+        common
+        ${PNG_LIBRARIES}
+        ${ZLIB_LIBRARIES}
+        ${SNAPPY_LIBRARIES}
+        ${X11_X11_LIB}
+        ${CMAKE_THREAD_LIBS_INIT}
+        dl
+    )
+
+    if (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+        target_link_libraries (eglretrace rt)
+    endif ()
+
+    install (TARGETS eglretrace RUNTIME DESTINATION bin) 
+endif ()
 
 ##############################################################################
 # CLI
 
-add_subdirectory(cli)
+if (ENABLE_CLI)
+    add_subdirectory(cli)
+endif ()
 
 ##############################################################################
 # Scripts (to support the CLI)
 
-install (PROGRAMS ${CMAKE_CURRENT_SOURCE_DIR}/scripts/tracediff.sh DESTINATION ${LIB_INSTALL_DIR}/scripts)
-install (PROGRAMS ${CMAKE_CURRENT_SOURCE_DIR}/scripts/jsondiff.py DESTINATION ${LIB_INSTALL_DIR}/scripts)
+install (
+    PROGRAMS
+        ${CMAKE_CURRENT_SOURCE_DIR}/scripts/tracediff.py
+        ${CMAKE_CURRENT_SOURCE_DIR}/scripts/jsondiff.py
+        ${CMAKE_CURRENT_SOURCE_DIR}/scripts/snapdiff.py
+    DESTINATION ${SCRIPTS_INSTALL_DIR}
+)
 
 ##############################################################################
 # GUI
@@ -509,11 +685,10 @@ install (
         LICENSE
         NEWS.markdown
         README.markdown
-        TODO.markdown
     DESTINATION ${DOC_INSTALL_DIR}
 )
 
-set (CPACK_PACKAGE_VERSION_MAJOR "2")
+set (CPACK_PACKAGE_VERSION_MAJOR "3")
 set (CPACK_PACKAGE_VERSION_MINOR "0")
 
 # Use current date in YYYYMMDD format as patch number 
@@ -521,6 +696,13 @@ execute_process (
     COMMAND ${PYTHON_EXECUTABLE} -c "import time, sys; sys.stdout.write(time.strftime('%Y%m%d'))"
     OUTPUT_VARIABLE CPACK_PACKAGE_VERSION_PATCH
 )
+
+# cpack mistakenly detects Mingw-w64 as win32
+if (MINGW)
+    if (CMAKE_SIZEOF_VOID_P EQUAL 8)
+        set (CPACK_SYSTEM_NAME win64)
+    endif ()
+endif ()
 
 # See http://www.vtk.org/Wiki/CMake:CPackPackageGenerators
 if (WIN32)

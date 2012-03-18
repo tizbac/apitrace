@@ -75,7 +75,7 @@ public:
         Drawable(vis, w, h),
         currentContext(nil)
     {
-        NSOpenGLPixelFormat *pixelFormat = dynamic_cast<const CocoaVisual *>(visual)->pixelFormat;
+        NSOpenGLPixelFormat *pixelFormat = static_cast<const CocoaVisual *>(visual)->pixelFormat;
 
         NSRect winRect = NSMakeRect(0, 0, w, h);
 
@@ -143,8 +143,8 @@ class CocoaContext : public Context
 public:
     NSOpenGLContext *context;
 
-    CocoaContext(const Visual *vis, NSOpenGLContext *ctx) :
-        Context(vis),
+    CocoaContext(const Visual *vis, Profile prof, NSOpenGLContext *ctx) :
+        Context(vis, prof),
         context(ctx)
     {}
 
@@ -171,25 +171,29 @@ cleanup(void) {
 
 
 Visual *
-createVisual(bool doubleBuffer) {
-    NSOpenGLPixelFormatAttribute single_attribs[] = {
-        NSOpenGLPFAAlphaSize, (NSOpenGLPixelFormatAttribute)1,
-        NSOpenGLPFAColorSize, (NSOpenGLPixelFormatAttribute)24,
-        NSOpenGLPFADepthSize, (NSOpenGLPixelFormatAttribute)1,
-        NSOpenGLPFAStencilSize, (NSOpenGLPixelFormatAttribute)1,
-        (NSOpenGLPixelFormatAttribute)0
-    };
+createVisual(bool doubleBuffer, Profile profile) {
+    if (profile != PROFILE_COMPAT &&
+        profile != PROFILE_CORE) {
+        return nil;
+    }
 
-    NSOpenGLPixelFormatAttribute double_attribs[] = {
-        NSOpenGLPFAAlphaSize, (NSOpenGLPixelFormatAttribute)1,
-        NSOpenGLPFAColorSize, (NSOpenGLPixelFormatAttribute)24,
-        NSOpenGLPFADoubleBuffer,
-        NSOpenGLPFADepthSize, (NSOpenGLPixelFormatAttribute)1,
-        NSOpenGLPFAStencilSize, (NSOpenGLPixelFormatAttribute)1,
-        (NSOpenGLPixelFormatAttribute)0
-    };
+    Attributes<NSOpenGLPixelFormatAttribute> attribs;
 
-    NSOpenGLPixelFormatAttribute *attribs = doubleBuffer ? double_attribs : single_attribs;
+    attribs.add(NSOpenGLPFAAlphaSize, (NSOpenGLPixelFormatAttribute)1);
+    attribs.add(NSOpenGLPFAColorSize, (NSOpenGLPixelFormatAttribute)24);
+    if (doubleBuffer) {
+        attribs.add(NSOpenGLPFADoubleBuffer);
+    }
+    attribs.add(NSOpenGLPFADepthSize, (NSOpenGLPixelFormatAttribute)1);
+    attribs.add(NSOpenGLPFAStencilSize, (NSOpenGLPixelFormatAttribute)1);
+    if (profile == PROFILE_CORE) {
+#if CGL_VERSION_1_3
+        attribs.add(NSOpenGLPFAOpenGLProfile, NSOpenGLProfileVersion3_2Core);
+#else
+	return NULL;
+#endif
+    }
+    attribs.end();
 
     NSOpenGLPixelFormat *pixelFormat = [[NSOpenGLPixelFormat alloc]
                                      initWithAttributes:attribs];
@@ -204,14 +208,19 @@ createDrawable(const Visual *visual, int width, int height)
 }
 
 Context *
-createContext(const Visual *visual, Context *shareContext)
+createContext(const Visual *visual, Context *shareContext, Profile profile)
 {
-    NSOpenGLPixelFormat *pixelFormat = dynamic_cast<const CocoaVisual *>(visual)->pixelFormat;
+    NSOpenGLPixelFormat *pixelFormat = static_cast<const CocoaVisual *>(visual)->pixelFormat;
     NSOpenGLContext *share_context = nil;
     NSOpenGLContext *context;
 
+    if (profile != PROFILE_COMPAT &&
+        profile != PROFILE_CORE) {
+        return nil;
+    }
+
     if (shareContext) {
-        share_context = dynamic_cast<CocoaContext*>(shareContext)->context;
+        share_context = static_cast<CocoaContext*>(shareContext)->context;
     }
 
     context = [[NSOpenGLContext alloc]
@@ -219,7 +228,7 @@ createContext(const Visual *visual, Context *shareContext)
                shareContext:share_context];
     assert(context != nil);
 
-    return new CocoaContext(visual, context);
+    return new CocoaContext(visual, profile, context);
 }
 
 bool
@@ -228,8 +237,8 @@ makeCurrent(Drawable *drawable, Context *context)
     if (!drawable || !context) {
         [NSOpenGLContext clearCurrentContext];
     } else {
-        CocoaDrawable *cocoaDrawable = dynamic_cast<CocoaDrawable *>(drawable);
-        CocoaContext *cocoaContext = dynamic_cast<CocoaContext *>(context);
+        CocoaDrawable *cocoaDrawable = static_cast<CocoaDrawable *>(drawable);
+        CocoaContext *cocoaContext = static_cast<CocoaContext *>(context);
 
         [cocoaDrawable->window makeKeyAndOrderFront:nil];
         [cocoaContext->context setView:[cocoaDrawable->window contentView]];

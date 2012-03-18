@@ -29,40 +29,19 @@
 #include <string.h>
 #include <stdio.h>
 
+#include <string>
+
 #include "os.hpp"
-#include "os_path.hpp"
+#include "os_string.hpp"
 
 
 namespace os {
 
 
-/* 
- * Trick from http://locklessinc.com/articles/pthreads_on_windows/
- */
-static CRITICAL_SECTION
-criticalSection = {
-    (PCRITICAL_SECTION_DEBUG)-1, -1, 0, 0, 0, 0
-};
-
-
-void
-acquireMutex(void)
-{
-    EnterCriticalSection(&criticalSection);
-}
-
-
-void
-releaseMutex(void)
-{
-    LeaveCriticalSection(&criticalSection);
-}
-
-
-Path
+String
 getProcessName(void)
 {
-    Path path;
+    String path;
     size_t size = MAX_PATH;
     char *buf = path.buf(size);
 
@@ -74,10 +53,10 @@ getProcessName(void)
     return path;
 }
 
-Path
+String
 getCurrentDir(void)
 {
-    Path path;
+    String path;
     size_t size = MAX_PATH;
     char *buf = path.buf(size);
     
@@ -91,10 +70,133 @@ getCurrentDir(void)
 }
 
 bool
-Path::exists(void) const
+String::exists(void) const
 {
     DWORD attrs = GetFileAttributesA(str());
     return attrs != INVALID_FILE_ATTRIBUTES;
+}
+
+bool
+copyFile(const String &srcFileName, const String &dstFileName, bool override)
+{
+    return CopyFileA(srcFileName, dstFileName, !override);
+}
+
+bool
+removeFile(const String &srcFilename)
+{
+    return DeleteFileA(srcFilename);
+}
+
+/**
+ * Determine whether an argument should be quoted.
+ */
+static bool
+needsQuote(const char *arg)
+{
+    char c;
+    while (true) {
+        c = *arg++;
+        if (c == '\0') {
+            break;
+        }
+        if (c == ' ' || c == '\t' || c == '\"') {
+            return true;
+        }
+        if (c == '\\') {
+            c = *arg++;
+            if (c == '\0') {
+                break;
+            }
+            if (c == '"') {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+static void
+quoteArg(std::string &s, const char *arg)
+{
+    char c;
+    unsigned backslashes = 0;
+    
+    s.push_back('"');
+    while (true) {
+        c = *arg++;
+        switch (c)
+        if (c == '\0') {
+            break;
+        } else if (c == '"') {
+            while (backslashes) {
+                s.push_back('\\');
+                --backslashes;
+            }
+            s.push_back('\\');
+        } else {
+            if (c == '\\') {
+                ++backslashes;
+            } else {
+                backslashes = 0;
+            }
+        }
+        s.push_back(c);
+    }
+    s.push_back('"');
+}
+
+int execute(char * const * args)
+{
+    std::string commandLine;
+   
+    const char *arg0 = *args;
+    const char *arg;
+    char sep = 0;
+    while ((arg = *args++) != NULL) {
+        if (sep) {
+            commandLine.push_back(sep);
+        }
+
+        if (needsQuote(arg)) {
+            quoteArg(commandLine, arg);
+        } else {
+            commandLine.append(arg);
+        }
+
+        sep = ' ';
+    }
+
+    STARTUPINFO startupInfo;
+    memset(&startupInfo, 0, sizeof(startupInfo));
+    startupInfo.cb = sizeof(startupInfo);
+
+    PROCESS_INFORMATION processInformation;
+
+    if (!CreateProcessA(NULL,
+                        const_cast<char *>(commandLine.c_str()), // only modified by CreateProcessW
+                        0, // process attributes
+                        0, // thread attributes
+                        FALSE, // inherit handles
+                        0, // creation flags,
+                        NULL, // environment
+                        NULL, // current directory
+                        &startupInfo,
+                        &processInformation
+                        )) {
+        log("error: failed to execute %s\n", arg0);
+        return -1;
+    }
+
+    WaitForSingleObject(processInformation.hProcess, INFINITE);
+
+    DWORD exitCode = ~0;
+    GetExitCodeProcess(processInformation.hProcess, &exitCode);
+
+    CloseHandle(processInformation.hProcess);
+    CloseHandle(processInformation.hThread);
+
+    return (int)exitCode;
 }
 
 void
@@ -123,16 +225,7 @@ log(const char *format, ...)
 #endif
 }
 
-long long
-getTime(void)
-{
-    static LARGE_INTEGER frequency;
-    LARGE_INTEGER counter;
-    if (!frequency.QuadPart)
-        QueryPerformanceFrequency(&frequency);
-    QueryPerformanceCounter(&counter);
-    return counter.QuadPart*1000000LL/frequency.QuadPart;
-}
+long long timeFrequency = 0LL;
 
 void
 abort(void)
@@ -145,21 +238,69 @@ abort(void)
 }
 
 
-static LPTOP_LEVEL_EXCEPTION_FILTER prevExceptionFilter = NULL;
+#ifndef DBG_PRINTEXCEPTION_C
+#define DBG_PRINTEXCEPTION_C 0x40010006
+#endif
+
+static PVOID prevExceptionFilter = NULL;
 static void (*gCallback)(void) = NULL;
 
-static LONG WINAPI
-unhandledExceptionFilter(PEXCEPTION_POINTERS pExceptionInfo)
+static LONG CALLBACK
+unhandledExceptionHandler(PEXCEPTION_POINTERS pExceptionInfo)
 {
-    if (gCallback) {
-        gCallback();
+    PEXCEPTION_RECORD pExceptionRecord = pExceptionInfo->ExceptionRecord;
+
+    /*
+     * Ignore OutputDebugStringA exception.
+     */
+    if (pExceptionRecord->ExceptionCode == DBG_PRINTEXCEPTION_C) {
+        return EXCEPTION_CONTINUE_SEARCH;
     }
 
-	if (prevExceptionFilter) {
-		return prevExceptionFilter(pExceptionInfo);
-    } else {
-		return EXCEPTION_CONTINUE_SEARCH;
+    /*
+     * Ignore C++ exceptions
+     *
+     * http://support.microsoft.com/kb/185294
+     * http://blogs.msdn.com/b/oldnewthing/archive/2010/07/30/10044061.aspx
+     */
+    if (pExceptionRecord->ExceptionCode == 0xe06d7363) {
+        return EXCEPTION_CONTINUE_SEARCH;
     }
+
+    /*
+     * Ignore thread naming exception.
+     *
+     * http://msdn.microsoft.com/en-us/library/xcb2z8hs.aspx
+     */
+    if (pExceptionRecord->ExceptionCode == 0x406d1388) {
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
+
+    // Clear direction flag
+#ifdef _MSC_VER
+#ifndef _WIN64
+    __asm {
+        cld
+    };
+#endif
+#else
+    asm("cld");
+#endif
+
+    log("apitrace: warning: caught exception 0x%08lx\n", pExceptionRecord->ExceptionCode);
+
+    static int recursion_count = 0;
+    if (recursion_count) {
+        fprintf(stderr, "apitrace: warning: recursion handling exception\n");
+    } else {
+        if (gCallback) {
+            ++recursion_count;
+            gCallback();
+            --recursion_count;
+        }
+    }
+
+    return EXCEPTION_CONTINUE_SEARCH;
 }
 
 void
@@ -172,19 +313,17 @@ setExceptionCallback(void (*callback)(void))
 
         assert(!prevExceptionFilter);
 
-        /*
-         * TODO: Unfortunately it seems that the CRT will reset the exception
-         * handler in certain circumnstances.  See
-         * http://www.codeproject.com/KB/winsdk/crash_hook.aspx
-         */
-        prevExceptionFilter = SetUnhandledExceptionFilter(unhandledExceptionFilter);
+        prevExceptionFilter = AddVectoredExceptionHandler(0, unhandledExceptionHandler);
     }
 }
 
 void
 resetExceptionCallback(void)
 {
-    gCallback = NULL;
+    if (gCallback) {
+        RemoveVectoredExceptionHandler(prevExceptionFilter);
+        gCallback = NULL;
+    }
 }
 
 

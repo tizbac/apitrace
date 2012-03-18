@@ -36,6 +36,8 @@
 
 MainWindow::MainWindow()
     : QMainWindow(),
+      m_api(trace::API_GL),
+      m_initalCallNum(-1),
       m_selectedEvent(0),
       m_stateEvent(0),
       m_nonDefaultsLookupEvent(0)
@@ -59,6 +61,7 @@ void MainWindow::createTrace()
     if (dialog.exec() == QDialog::Accepted) {
         qDebug()<< "App : " <<dialog.applicationPath();
         qDebug()<< "  Arguments: "<<dialog.arguments();
+        m_traceProcess->setApi(dialog.api());
         m_traceProcess->setExecutablePath(dialog.applicationPath());
         m_traceProcess->setArguments(dialog.arguments());
         m_traceProcess->start();
@@ -79,7 +82,7 @@ void MainWindow::openTrace()
     }
 }
 
-void MainWindow::loadTrace(const QString &fileName)
+void MainWindow::loadTrace(const QString &fileName, int callNum)
 {
     if (!QFile::exists(fileName)) {
         QMessageBox::warning(this, tr("File Missing"),
@@ -87,6 +90,7 @@ void MainWindow::loadTrace(const QString &fileName)
         return;
     }
 
+    m_initalCallNum = callNum;
     newTraceFile(fileName);
 }
 
@@ -97,6 +101,10 @@ void MainWindow::callItemSelected(const QModelIndex &index)
 
     if (event && event->type() == ApiTraceEvent::Call) {
         ApiTraceCall *call = static_cast<ApiTraceCall*>(event);
+        m_ui.detailsDock->setWindowTitle(
+            tr("Details View. Frame %1, Call %2")
+            .arg(call->parentFrame() ? call->parentFrame()->number : 0)
+            .arg(call->index()));
         m_ui.detailsWebView->setHtml(call->toHtml());
         m_ui.detailsDock->show();
         if (call->hasBinaryData()) {
@@ -138,6 +146,10 @@ void MainWindow::callItemSelected(const QModelIndex &index)
     } else {
         m_ui.stateDock->hide();
     }
+}
+
+void MainWindow::callItemActivated(const QModelIndex &index) {
+    lookupState();
 }
 
 void MainWindow::replayStart()
@@ -250,6 +262,10 @@ void MainWindow::finishedLoadingTrace()
     QFileInfo info(m_trace->fileName());
     statusBar()->showMessage(
         tr("Loaded %1").arg(info.fileName()), 3000);
+    if (m_initalCallNum >= 0) {
+        m_trace->findCallIndex(m_initalCallNum);
+        m_initalCallNum = -1;
+    }
 }
 
 void MainWindow::replayTrace(bool dumpState)
@@ -259,6 +275,7 @@ void MainWindow::replayTrace(bool dumpState)
     }
 
     m_retracer->setFileName(m_trace->fileName());
+    m_retracer->setAPI(m_api);
     m_retracer->setCaptureState(dumpState);
     if (m_retracer->captureState() && m_selectedEvent) {
         int index = 0;
@@ -458,8 +475,9 @@ static void addSurfaceItem(const ApiSurface &surface,
     int width = surface.size().width();
     int height = surface.size().height();
     QString descr =
-        QString::fromLatin1("%1, %2 x %3")
+        QString::fromLatin1("%1, %2, %3 x %4")
         .arg(label)
+        .arg(surface.formatName())
         .arg(width)
         .arg(height);
 
@@ -558,9 +576,12 @@ void MainWindow::fillStateForFrame()
 void MainWindow::showSettings()
 {
     SettingsDialog dialog;
+    dialog.setAPI(m_api);
     dialog.setFilterModel(m_proxyModel);
 
     dialog.exec();
+
+    m_api = dialog.getAPI();
 }
 
 void MainWindow::openHelp(const QUrl &url)
@@ -762,6 +783,8 @@ void MainWindow::initConnections()
 
     connect(m_ui.callView->selectionModel(), SIGNAL(currentChanged(const QModelIndex &, const QModelIndex &)),
             this, SLOT(callItemSelected(const QModelIndex &)));
+    connect(m_ui.callView, SIGNAL(doubleClicked(const QModelIndex &)),
+            this, SLOT(callItemActivated(const QModelIndex &)));
     connect(m_ui.callView, SIGNAL(customContextMenuRequested(QPoint)),
             this, SLOT(customContextMenuRequested(QPoint)));
 

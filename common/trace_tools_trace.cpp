@@ -30,7 +30,8 @@
 
 #include <iostream>
 
-#include "os_path.hpp"
+#include "os_string.hpp"
+#include "os_process.hpp"
 #include "trace_tools.hpp"
 
 
@@ -39,88 +40,146 @@ namespace trace {
 
 
 #if defined(__APPLE__)
-#define CLI_TRACE_VARIABLE "DYLD_LIBRARY_PATH"
-#define CLI_TRACE_WRAPPER  "OpenGL"
+#define TRACE_VARIABLE "DYLD_LIBRARY_PATH"
+#define GL_TRACE_WRAPPER  "OpenGL"
 #elif defined(_WIN32)
-#define CLI_TRACE_VARIABLE ""
-#define CLI_TRACE_WRAPPER  "opengl32.dll"
+#define GL_TRACE_WRAPPER  "opengl32.dll"
 #else
-#define CLI_TRACE_VARIABLE "LD_PRELOAD"
-#define CLI_TRACE_WRAPPER  "glxtrace.so"
+#define TRACE_VARIABLE "LD_PRELOAD"
+#define GL_TRACE_WRAPPER  "glxtrace.so"
+#define EGL_TRACE_WRAPPER  "egltrace.so"
 #endif
 
 
-os::Path
-findFile(const char *relPath,
-         const char *absPath,
-         bool verbose)
+static os::String
+findWrapper(const char *wrapperFilename)
 {
-    os::Path complete;
+    os::String wrapperPath;
 
-    /* First look in the same directory from which this process is
-     * running, (to support developers running a compiled program that
-     * has not been installed. */
-    os::Path process_dir = os::getProcessName();
+    os::String processDir = os::getProcessName();
+    processDir.trimFilename();
 
-    process_dir.trimFilename();
-
-    complete = process_dir;
-    complete.join(relPath);
-
-    if (complete.exists())
-        return complete;
-
-    /* Second, look in the directory for installed wrappers. */
-    complete = absPath;
-    if (complete.exists())
-        return complete;
-
-    if (verbose) {
-        std::cerr << "error: cannot find " << relPath << " or " << absPath << "\n";
+    // Try relative build directory
+    // XXX: Just make build and install directory layout match
+    wrapperPath = processDir;
+    wrapperPath.join("wrappers");
+    wrapperPath.join(wrapperFilename);
+    if (wrapperPath.exists()) {
+        return wrapperPath;
     }
+
+    // Try relative install directory
+    wrapperPath = processDir;
+#if defined(_WIN32)
+    wrapperPath.join("..\\lib\\wrappers");
+#elif defined(__APPLE__)
+    wrapperPath.join("../lib/wrappers");
+#else
+    wrapperPath.join("../lib/apitrace/wrappers");
+#endif
+    wrapperPath.join(wrapperFilename);
+    if (wrapperPath.exists()) {
+        return wrapperPath;
+    }
+
+#ifndef _WIN32
+    // Try absolute install directory
+    wrapperPath = APITRACE_WRAPPER_INSTALL_DIR;
+    wrapperPath.join(wrapperFilename);
+    if (wrapperPath.exists()) {
+        return wrapperPath;
+    }
+#endif
 
     return "";
 }
 
 
 int
-traceProgram(char * const *argv,
+traceProgram(API api,
+             char * const *argv,
              const char *output,
              bool verbose)
 {
-    os::Path wrapper;
+    const char *wrapperFilename;
 
-    wrapper = findFile("wrappers/" CLI_TRACE_WRAPPER, APITRACE_WRAPPER_INSTALL_DIR "/" CLI_TRACE_WRAPPER, verbose);
+    /*
+     * TODO: simplify code
+     */
 
-    if (!wrapper.length()) {
+    switch (api) {
+    case API_GL:
+        wrapperFilename = GL_TRACE_WRAPPER;
+        break;
+#ifdef EGL_TRACE_WRAPPER
+    case API_EGL:
+        wrapperFilename = EGL_TRACE_WRAPPER;
+        break;
+#endif
+#ifdef _WIN32
+    case API_D3D7:
+        wrapperFilename = "ddraw.dll";
+        break;
+    case API_D3D8:
+        wrapperFilename = "d3d8.dll";
+        break;
+    case API_D3D9:
+        wrapperFilename = "d3d9.dll";
+        break;
+    case API_D3D10:
+        wrapperFilename = "d3d10.dll";
+        break;
+#endif
+    default:
+        std::cerr << "error: unsupported API\n";
+        return 1;
+    }
+
+    os::String wrapperPath = findWrapper(wrapperFilename);
+
+    if (!wrapperPath.length()) {
+        std::cerr << "error: failed to find " << wrapperFilename << "\n";
         return 1;
     }
 
 #if defined(_WIN32)
+    /* On Windows copy the wrapper to the program directory.
+     */
+    os::String tmpWrapper(argv[0]);
+    tmpWrapper.trimFilename();
+    tmpWrapper.join(wrapperFilename);
 
-    std::cerr <<
-        "The 'apitrace trace' command is not supported for this operating system.\n"
-        "Instead, you will need to copy opengl32.dll, d3d8.dll, or d3d9.dll from\n"
-        APITRACE_WRAPPER_INSTALL_DIR "\n"
-        "to the directory with the application to trace, then run the application.\n";
+    if (verbose) {
+        std::cerr << wrapperPath << " -> " << tmpWrapper << "\n";
+    }
 
-#else
+    if (tmpWrapper.exists()) {
+        std::cerr << "error: not overwriting " << tmpWrapper << "\n";
+        return 1;
+    }
+
+    if (!os::copyFile(wrapperPath, tmpWrapper, false)) {
+        std::cerr << "error: failed to copy " << wrapperPath << " into " << tmpWrapper << "\n";
+        return 1;
+    }
+#endif /* _WIN32 */
 
 #if defined(__APPLE__)
     /* On Mac OS X, using DYLD_LIBRARY_PATH, we actually set the
      * directory, not the file. */
-    wrapper.trimFilename();
+    wrapperPath.trimFilename();
 #endif
 
+#if defined(TRACE_VARIABLE)
     if (verbose) {
-        std::cerr << CLI_TRACE_VARIABLE << "=" << wrapper.str() << "\n";
+        std::cerr << TRACE_VARIABLE << "=" << wrapperPath.str() << "\n";
     }
-
     /* FIXME: Don't modify the current environment */
-    setenv(CLI_TRACE_VARIABLE, wrapper.str(), 1);
+    os::setEnvironment(TRACE_VARIABLE, wrapperPath.str());
+#endif /* TRACE_VARIABLE */
 
     if (output) {
-        setenv("TRACE_FILE", output, 1);
+        os::setEnvironment("TRACE_FILE", output);
     }
 
     if (verbose) {
@@ -132,17 +191,21 @@ traceProgram(char * const *argv,
         std::cerr << "\n";
     }
 
-    execvp(argv[0], argv);
+    int status = os::execute(argv);
 
-    unsetenv(CLI_TRACE_VARIABLE);
-    if (output) {
-        unsetenv("TRACE_FILE");
-    }
-
-    std::cerr << "error: Failed to execute " << argv[0] << "\n";
+#if defined(TRACE_VARIABLE)
+    os::unsetEnvironment(TRACE_VARIABLE);
+#endif
+#if defined(_WIN32)
+    os::removeFile(tmpWrapper);
 #endif
 
-    return 1;
+    if (output) {
+        os::unsetEnvironment("TRACE_FILE");
+    }
+    
+    return status;
+
 }
 
 

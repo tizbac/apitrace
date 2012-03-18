@@ -29,8 +29,9 @@
 #include <iostream>
 
 #include "cli.hpp"
-#include "os_path.hpp"
-#include "trace_tools.hpp"
+#include "os_string.hpp"
+#include "os_process.hpp"
+#include "trace_resource.hpp"
 
 static const char *synopsis = "Identify differences between two state dumps.";
 
@@ -49,7 +50,7 @@ command(int argc, char *argv[])
 {
     int i;
 
-    for (i = 0; i < argc; ++i) {
+    for (i = 1; i < argc; ++i) {
         const char *arg = argv[i];
 
         if (arg[0] != '-') {
@@ -80,28 +81,17 @@ command(int argc, char *argv[])
     file1 = argv[i];
     file2 = argv[i+1];
 
-#define CLI_DIFF_STATE_COMMAND "jsondiff.py"
+    os::String command = trace::findScript("jsondiff.py");
 
-    os::Path command = trace::findFile("scripts/" CLI_DIFF_STATE_COMMAND,
-                 APITRACE_SCRIPTS_INSTALL_DIR "/" CLI_DIFF_STATE_COMMAND,
-                                       true);
+    char *args[5];
 
-    char* args[4];
+    args[0] = const_cast<char *>("python");
+    args[1] = const_cast<char *>(command.str());
+    args[2] = file1;
+    args[3] = file2;
+    args[4] = NULL;
 
-    args[0] = (char *) command.str();
-    args[1] = file1;
-    args[2] = file2;
-    args[3] = NULL;
-
-#ifdef _WIN32
-    std::cerr << "The 'apitrace diff-state' command is not yet supported on this O/S.\n";
-#else
-    execv(command.str(), args);
-#endif
-
-    std::cerr << "Error: Failed to execute " << argv[0] << "\n";
-
-    return 1;
+    return os::execute(args);
 }
 
 const Command diff_state_command = {
