@@ -35,7 +35,7 @@
 #include <stdio.h>
 static bool supportsElapsed = true;
 IDirect3DDevice9* dx9_dev = NULL;
-IDirect3DQuery9* dx9_elapsed = NULL;
+IDirect3DQuery9* dx9_freq = NULL;
 IDirect3DQuery9* dx9_start = NULL;
 IDirect3DQuery9* dx9_end = NULL;
 uint64_t callstart = 0;
@@ -86,13 +86,14 @@ retrace::waitForInput(void) {
 extern d3dretrace::D3DDumper<IDirect3DDevice9> d3d9Dumper;
 void d3dretrace::beginProfileDX9(trace::Call &call, bool isDraw)
 {
-    if (!dx9_elapsed)
+    if (!dx9_start)
     {
         d3d9Dumper.pLastDevice->CreateQuery(D3DQUERYTYPE_TIMESTAMP,&dx9_start);
         d3d9Dumper.pLastDevice->CreateQuery(D3DQUERYTYPE_TIMESTAMP,&dx9_end);
-        d3d9Dumper.pLastDevice->CreateQuery((D3DQUERYTYPE)255,&dx9_elapsed);
+        d3d9Dumper.pLastDevice->CreateQuery(D3DQUERYTYPE_TIMESTAMPFREQ,&dx9_freq);
     }
-    dx9_elapsed->Issue(D3DISSUE_BEGIN);
+   /* dx9_freq->Issue(D3DISSUE_BEGIN);
+    dx9_freq->Issue(D3DISSUE_END);*/
     dx9_start->Issue(D3DISSUE_BEGIN);
     dx9_start->Issue(D3DISSUE_END);
     callstart = getCurrentTime();
@@ -100,15 +101,15 @@ void d3dretrace::beginProfileDX9(trace::Call &call, bool isDraw)
 
 void d3dretrace::endProfileDX9(trace::Call &call, bool isDraw)
 {
-    UINT64 tt,ttstart,ttend;
+    UINT64 freq=10000,ttstart,ttend;
     UINT64 cpuend = getCurrentTime();
     dx9_end->Issue(D3DISSUE_BEGIN);
     dx9_end->Issue(D3DISSUE_END);
-    dx9_elapsed->Issue(D3DISSUE_END);
-    while( dx9_elapsed->GetData(&tt, sizeof(UINT64),0) != S_OK) {}
+
+   // while( dx9_freq->GetData(&freq, sizeof(UINT64),0) != S_OK) {}
     while( dx9_start->GetData(&ttstart, sizeof(UINT64),0) != S_OK) {}
     while( dx9_end->GetData(&ttend, sizeof(UINT64),0) != S_OK) {}
-    retrace::profiler.addCall(call.no,call.sig->name,0,0,ttstart,tt,callstart*1000,(cpuend-callstart)*1000,0,0,0,0);
+    retrace::profiler.addCall(call.no,call.sig->name,0,0,((double)ttstart/(double)freq)*1000000,(((double)(ttend-ttstart))/(double)freq)*1000000,callstart*1000,(cpuend-callstart)*1000,0,0,0,0);
 }
 
 
