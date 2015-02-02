@@ -722,6 +722,22 @@ json.writeInt(rsvalue);
 json.endMember();
 
     
+
+json.beginMember("Viewport");
+{
+    json.beginObject();
+    D3DVIEWPORT9 vp;
+    pDevice->GetViewport(&vp);
+    json.writeIntMember("X",vp.X);
+    json.writeIntMember("Y",vp.Y);
+    json.writeIntMember("Width",vp.Width);
+    json.writeIntMember("Height",vp.Height);
+    json.writeIntMember("MinZ",vp.MinZ);
+    json.writeIntMember("MaxZ",vp.MaxZ);
+    json.endObject();
+}
+
+json.endMember();
     json.endObject();
     json.endMember(); // parameters
 
