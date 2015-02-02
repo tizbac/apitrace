@@ -38,6 +38,7 @@ IDirect3DDevice9* dx9_dev = NULL;
 IDirect3DQuery9* dx9_freq = NULL;
 IDirect3DQuery9* dx9_start = NULL;
 IDirect3DQuery9* dx9_end = NULL;
+std::map<unsigned int,std::string> dx9_shader_replacement;
 uint64_t callstart = 0;
 void
 retrace::setFeatureLevel(const char *featureLevel) {
@@ -107,12 +108,42 @@ void d3dretrace::endProfileDX9(trace::Call &call, bool isDraw)
     dx9_end->Issue(D3DISSUE_END);
 
    // while( dx9_freq->GetData(&freq, sizeof(UINT64),0) != S_OK) {}
-    while( dx9_start->GetData(&ttstart, sizeof(UINT64),0) != S_OK) {}
-    while( dx9_end->GetData(&ttend, sizeof(UINT64),0) != S_OK) {}
+    while( dx9_start->GetData(&ttstart, sizeof(UINT64),1) != S_OK) {}
+    while( dx9_end->GetData(&ttend, sizeof(UINT64),1) != S_OK) {}
     retrace::profiler.addCall(call.no,call.sig->name,0,0,((double)ttstart/(double)freq)*1000000,(((double)(ttend-ttstart))/(double)freq)*1000000,callstart*1000,(cpuend-callstart)*1000,0,0,0,0);
 }
 
-
+DWORD * d3dretrace::CheckReplaceShader(DWORD * pFunction, trace::Call &call)
+{
+    if ( dx9_shader_replacement.find(call.no) != dx9_shader_replacement.end() )
+    {
+        DWORD * result;
+        
+        std::string replacement = dx9_shader_replacement[call.no];
+        std::cerr << "Replacing shader on call " << call.no << " with shader from " << replacement << std::endl;
+        FILE * f = fopen(replacement.c_str(),"rb");
+        if( !f )
+        {
+            std::cerr << "Failed to open replacement shader " << replacement << std::endl;
+            MessageBox(NULL, replacement.c_str(), "Cannot replace shader",
+                MB_OK|MB_ICONEXCLAMATION);
+            return pFunction;
+        }else{
+            fseek(f,0,SEEK_END);
+            int filelen = ftell(f);
+            fseek(f,0,SEEK_SET);
+            result = (DWORD*)malloc(filelen); //Will leak , but on a trace , who cares...
+            fread(result,filelen,1,f);
+            fclose(f);
+            std::cerr << "Replaced shader on call " << call.no << std::endl;
+        }
+        return result;
+        
+    }else{
+        return pFunction;
+    }
+    
+}
 
 void
 retrace::cleanUp(void) {

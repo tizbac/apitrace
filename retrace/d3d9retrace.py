@@ -139,6 +139,8 @@ class D3DRetracer(Retracer):
 
         # Ensure textures can be locked when dumping
         # TODO: Pre-check with CheckDeviceFormat
+        if method.name in ('CreateVertexShader', 'CreatePixelShader'):
+            print r'    pFunction = d3dretrace::CheckReplaceShader(pFunction,call);'
         if method.name in ('CreateTexture', 'CreateCubeTexture', 'CreateVolumeTexture'):
             print r'    if (retrace::dumpingState &&'
             print r'        Pool == D3DPOOL_DEFAULT &&'

@@ -38,7 +38,7 @@
 #include "os_memory.hpp"
 #include "highlight.hpp"
 
-
+std::map<unsigned int,std::string> dx9_shader_replacement;
 /* Synchronous debug output may reduce performance however,
  * without it the callNo in the callback may be inaccurate
  * as the callback may be called at any time.

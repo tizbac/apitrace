@@ -94,7 +94,7 @@ processEvents(void);
 
 void beginProfileDX9(trace::Call &call, bool isDraw);
 void endProfileDX9(trace::Call &call, bool isDraw);
-
+DWORD * CheckReplaceShader(DWORD * pFunction, trace::Call &call);
 
 } /* namespace d3dretrace */
 

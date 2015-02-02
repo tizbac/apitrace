@@ -600,6 +600,7 @@ usage(const char *argv0) {
         "      --pgpu              gpu profiling (gpu times per draw call)\n"
         "      --ppd               pixels drawn profiling (pixels drawn per draw call)\n"
         "      --pmem              memory usage profiling (vsize rss per call)\n"
+        "      --rshader [callno,file]  replace d3d9 pixel or vertex shader with specified file\n"
         "      --call-nos[=BOOL]   use call numbers in snapshot filenames\n"
         "      --core              use core profile\n"
         "      --db                use a double buffer visual (default)\n"
@@ -631,7 +632,8 @@ enum {
     SNAPSHOT_FORMAT_OPT,
     LOOP_OPT,
     SINGLETHREAD_OPT,
-    SNAPSHOT_INTERVAL_OPT
+    SNAPSHOT_INTERVAL_OPT,
+    REPLACE_SHADER,
 };
 
 const static char *
@@ -661,6 +663,7 @@ longOptions[] = {
     {"wait", no_argument, 0, 'w'},
     {"loop", optional_argument, 0, LOOP_OPT},
     {"singlethread", no_argument, 0, SINGLETHREAD_OPT},
+    {"rshader", required_argument, 0, REPLACE_SHADER},
     {0, 0, 0, 0}
 };
 
@@ -670,13 +673,18 @@ static void exceptionCallback(void)
     std::cerr << retrace::callNo << ": error: caught an unhandled exception\n";
 }
 
+#ifdef _WIN32
+
+extern std::map<unsigned int,std::string> dx9_shader_replacement;
+#endif
 
 extern "C"
 int main(int argc, char **argv)
 {
     using namespace retrace;
     int i;
-
+    char * callno;
+    char * replfile;
     assert(snapshotFrequency.empty());
 
     int opt;
@@ -809,6 +817,11 @@ int main(int argc, char **argv)
             retrace::verbosity = -1;
 
             retrace::profilingMemoryUsage = true;
+            break;
+        case REPLACE_SHADER:
+            callno = strtok(optarg,",");
+            replfile = strtok(NULL,",");
+            dx9_shader_replacement.insert(std::pair<unsigned int,std::string>(atoi(callno),replfile));
             break;
         default:
             std::cerr << "error: unknown option " << opt << "\n";
