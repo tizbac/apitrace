@@ -92,6 +92,9 @@ resizeWindow(HWND hWnd, int width, int height);
 bool
 processEvents(void);
 
+void beginProfileDX9(trace::Call &call, bool isDraw);
+void endProfileDX9(trace::Call &call, bool isDraw);
+
 
 } /* namespace d3dretrace */
 
