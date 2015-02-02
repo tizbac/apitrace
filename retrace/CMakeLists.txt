@@ -293,6 +293,7 @@ if (WIN32)
         retrace_common
         d3dhelpers
         d3dx9
+        d3d9
     )
     if (DirectX_D3D11_2_INCLUDE_FOUND)
         target_link_libraries (d3dretrace directxtex)

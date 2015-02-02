@@ -33,7 +33,7 @@
 #include "com_ptr.hpp"
 #include "d3d9state.hpp"
 #include "d3dstate.hpp"
-
+#include <d3dx9.h>
 
 namespace d3dstate {
 
@@ -206,7 +206,8 @@ dumpTextures(JSONWriter &json, IDirect3DDevice9 *pDevice)
     json.endMember(); // textures
 }
 
-
+#define FOURCC_RESZ ((D3DFORMAT)(MAKEFOURCC('R','E','S','Z')))
+#define RESZ_CODE 0x7fa05000
 void
 dumpFramebuffer(JSONWriter &json, IDirect3DDevice9 *pDevice)
 {
@@ -240,9 +241,35 @@ dumpFramebuffer(JSONWriter &json, IDirect3DDevice9 *pDevice)
         }
     }
 
-    com_ptr<IDirect3DSurface9> pDepthStencil;
+    IDirect3DSurface9 * pDepthStencil = NULL;
+
+    BOOL bRESZSupported = 1;
+    D3DVIEWPORT9 vp;
+    pDevice->GetViewport(&vp);
     hr = pDevice->GetDepthStencilSurface(&pDepthStencil);
-    if (SUCCEEDED(hr) && pDepthStencil) {
+    if ( bRESZSupported )
+    {
+        std::cerr << "Doing resz" << std::endl;
+        IDirect3DTexture9 * lockabletex;
+        pDevice->CreateTexture(vp.Width,vp.Height, 1, D3DUSAGE_DEPTHSTENCIL, D3DFMT_D16_LOCKABLE,D3DPOOL_DEFAULT,&lockabletex, NULL);
+        pDevice->SetTexture(0, lockabletex);
+        D3DXVECTOR3 vDummyPoint(0.0f, 0.0f, 0.0f);
+        pDevice->SetRenderState(D3DRS_ZENABLE, FALSE);
+        pDevice->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
+        pDevice->SetRenderState(D3DRS_COLORWRITEENABLE, 0);
+        pDevice->DrawPrimitiveUP(D3DPT_POINTLIST, 1, vDummyPoint, 
+        sizeof(D3DXVECTOR3));
+        pDevice->SetRenderState(D3DRS_ZWRITEENABLE, TRUE);
+        pDevice->SetRenderState(D3DRS_ZENABLE, TRUE);
+        pDevice->SetRenderState(D3DRS_COLORWRITEENABLE, 0x0F);
+        
+        pDevice->SetRenderState(D3DRS_POINTSIZE, RESZ_CODE);
+        pDevice->SetRenderState(D3DRS_POINTSIZE, 0x0);
+        
+        lockabletex->GetSurfaceLevel(0,&pDepthStencil);
+    }
+    std::cerr << "SUCC:" << SUCCEEDED(hr) << " " << pDepthStencil << std::endl;
+    if (pDepthStencil) {
         image::Image *image;
         image = getSurfaceImage(pDevice, pDepthStencil);
         if (image) {
