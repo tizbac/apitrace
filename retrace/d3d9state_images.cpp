@@ -52,6 +52,8 @@ getSurfaceImage(IDirect3DDevice9 *pDevice,
     hr = pSurface->GetDesc(&Desc);
     assert(SUCCEEDED(hr));
 
+    
+    
     D3DLOCKED_RECT LockedRect;
     hr = pSurface->LockRect(&LockedRect, NULL, D3DLOCK_READONLY);
     if (FAILED(hr)) {
@@ -62,6 +64,43 @@ getSurfaceImage(IDirect3DDevice9 *pDevice,
 
     pSurface->UnlockRect();
 
+    if (!image){ //Convert failed , do stretchrect to a known format to retrieve data
+        
+        IDirect3DSurface9 * dumpSurf;
+        IDirect3DTexture9 * tex;
+        pDevice->CreateTexture(Desc.Width, Desc.Height,1,0,D3DFMT_A8R8G8B8,D3DPOOL_DEFAULT, &tex, NULL);
+        tex->GetSurfaceLevel(0,&dumpSurf);
+        assert(dumpSurf);
+        RECT srect;
+        srect.left = 0;
+        srect.top = 0;
+        srect.right = Desc.Width;
+        srect.bottom = Desc.Height;
+        RECT drect;
+        drect.left = 0;
+        drect.top = 0;
+        drect.right = Desc.Width;
+        drect.bottom = Desc.Height;
+        hr = pDevice->StretchRect(pSurface,&srect,dumpSurf,&drect,D3DTEXF_NONE);
+        if (SUCCEEDED(hr)) {
+        dumpSurf->LockRect(&LockedRect, NULL, D3DLOCK_READONLY);
+        image = ConvertImage(D3DFMT_A8R8G8B8, LockedRect.pBits, LockedRect.Pitch, Desc.Width, Desc.Height);
+        dumpSurf->UnlockRect();
+        
+        }else{
+            dumpSurf->Release();
+            tex->Release();
+            pDevice->CreateTexture(Desc.Width, Desc.Height,1,0,D3DFMT_A8R8G8B8,D3DPOOL_SYSTEMMEM, &tex, NULL);
+            tex->GetSurfaceLevel(0,&dumpSurf);
+            pDevice->GetRenderTargetData(pSurface,dumpSurf);
+            dumpSurf->LockRect(&LockedRect, NULL, D3DLOCK_READONLY);
+            image = ConvertImage(D3DFMT_A8R8G8B8, LockedRect.pBits, LockedRect.Pitch, Desc.Width, Desc.Height);
+            dumpSurf->UnlockRect();
+            dumpSurf->Release();
+            tex->Release();
+        }
+        
+    }
     return image;
 }
 
@@ -249,9 +288,11 @@ dumpFramebuffer(JSONWriter &json, IDirect3DDevice9 *pDevice)
     hr = pDevice->GetDepthStencilSurface(&pDepthStencil);
     if ( bRESZSupported )
     {
+        IDirect3DTexture9 * oldtex;
         std::cerr << "Doing resz" << std::endl;
         IDirect3DTexture9 * lockabletex;
         pDevice->CreateTexture(vp.Width,vp.Height, 1, D3DUSAGE_DEPTHSTENCIL, D3DFMT_D16_LOCKABLE,D3DPOOL_DEFAULT,&lockabletex, NULL);
+        pDevice->GetTexture(0, (IDirect3DBaseTexture9**)(&oldtex));
         pDevice->SetTexture(0, lockabletex);
         D3DXVECTOR3 vDummyPoint(0.0f, 0.0f, 0.0f);
         pDevice->SetRenderState(D3DRS_ZENABLE, FALSE);
@@ -265,6 +306,7 @@ dumpFramebuffer(JSONWriter &json, IDirect3DDevice9 *pDevice)
         
         pDevice->SetRenderState(D3DRS_POINTSIZE, RESZ_CODE);
         pDevice->SetRenderState(D3DRS_POINTSIZE, 0x0);
+        pDevice->SetTexture(0, oldtex);
         
         lockabletex->GetSurfaceLevel(0,&pDepthStencil);
     }
