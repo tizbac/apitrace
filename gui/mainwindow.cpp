@@ -38,7 +38,7 @@
 #include <QVBoxLayout>
 #include <QWebPage>
 #include <QWebView>
-
+#include <QMenu>
 
 MainWindow::MainWindow()
     : QMainWindow(),
@@ -1181,9 +1181,55 @@ void MainWindow::customContextMenuRequested(QPoint pos)
     if (event->type() == ApiTraceEvent::Call) {
         menu.addAction(tr("Edit"), this, SLOT(editCall()));
     }
+    std::cout << m_api << std::endl;
+    if (m_api == trace::API_DX && event->type() == ApiTraceEvent::Call )
+    {
+        ApiTraceCall * call = dynamic_cast<ApiTraceCall*>(event);
+        std::cout << call->name().toStdString() << std::endl;
+        if ( call->name().endsWith("CreatePixelShader") || call->name().endsWith("CreateVertexShader" ) )
+        {
+            menu.addAction(tr("Replace with compiled shader from file"), this, SLOT(setshaderReplacement()));
+            if ( call->getShaderReplaced() )
+                menu.addAction(tr("Remove shader replacement"), this , SLOT(removeShaderReplacement()));
+        }
+    }
 
     menu.exec(QCursor::pos());
 }
+
+void MainWindow::setshaderReplacement()
+{
+    if (m_selectedEvent)
+    {
+        QString fileChoosen = QFileDialog::getOpenFileName(this,tr("Select shader file"),".",tr("Compiled PS/VS Files(*.bin)"));
+        QFile f(fileChoosen);
+        if ( f.exists() )
+        {
+            
+            ApiTraceCall * call = dynamic_cast<ApiTraceCall*>(m_selectedEvent);
+            m_shader_replacements.insert(call->index(),fileChoosen);
+            call->setShaderReplaced(true);
+            m_model->callChanged(call);
+        }else {
+            ApiTraceCall * call = dynamic_cast<ApiTraceCall*>(m_selectedEvent);
+            call->setShaderReplaced(false);
+            m_shader_replacements.remove(call->index());
+            m_model->callChanged(call);
+        }
+    }
+}
+
+void MainWindow::removeShaderReplacement()
+{
+    if (m_selectedEvent)
+    {
+        ApiTraceCall * call = dynamic_cast<ApiTraceCall*>(m_selectedEvent);
+        call->setShaderReplaced(false);
+        m_model->callChanged(call);
+        m_shader_replacements.remove(call->index());
+    }
+}
+
 
 void MainWindow::editCall()
 {

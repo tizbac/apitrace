@@ -64,6 +64,8 @@ private slots:
     void loadProgess(int percent);
     void finishedLoadingTrace();
     void lookupState();
+    void setshaderReplacement();
+    void removeShaderReplacement();
     void showThumbnails();
     void trim();
     void showSettings();
@@ -156,6 +158,8 @@ private:
     ApiTraceEvent *m_nonDefaultsLookupEvent;
 
     ProfileDialog* m_profileDialog;
+    
+    QMap<unsigned int,QString> m_shader_replacements;
 };
 
 

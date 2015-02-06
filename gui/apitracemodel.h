@@ -49,13 +49,14 @@ public:
     virtual bool canFetchMore(const QModelIndex & parent) const;
     virtual void fetchMore(const QModelIndex &parent);
     /* } QAbstractItemModel; */
-
+public slots:
+    void callChanged(ApiTraceCall *call);
 private slots:
     void invalidateFrames();
     void beginAddingFrames(int oldCount, int numAdded);
     void endAddingFrames();
     void changed(ApiTraceEvent *event);
-    void callChanged(ApiTraceCall *call);
+    
     void frameChanged(ApiTraceFrame *frame);
     void beginLoadingFrame(ApiTraceFrame *frame, int numAdded);
     void endLoadingFrame(ApiTraceFrame *frame);

@@ -637,7 +637,7 @@ ApiTraceCall::ApiTraceCall(ApiTraceCall *parentCall,
     : ApiTraceEvent(ApiTraceEvent::Call),
       m_parentFrame(parentCall->parentFrame()),
       m_parentCall(parentCall)
-{
+{ 
     loadData(loader, call);
 }
 
@@ -646,11 +646,22 @@ ApiTraceCall::~ApiTraceCall()
 {
 }
 
+bool ApiTraceCall::getShaderReplaced()
+{
+    return m_isShaderReplaced;
+}
+
+void ApiTraceCall::setShaderReplaced(bool bReplaced)
+{
+    m_isShaderReplaced = bReplaced;
+}
+
 
 void
 ApiTraceCall::loadData(TraceLoader *loader,
                        const trace::Call *call)
 {
+    m_isShaderReplaced = false;
     m_index = call->no;
     m_thread = call->thread_id;
     m_signature = loader->signature(call->sig->id);

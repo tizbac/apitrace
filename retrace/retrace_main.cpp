@@ -818,11 +818,13 @@ int main(int argc, char **argv)
 
             retrace::profilingMemoryUsage = true;
             break;
+#ifdef _WIN32
         case REPLACE_SHADER:
             callno = strtok(optarg,",");
             replfile = strtok(NULL,",");
             dx9_shader_replacement.insert(std::pair<unsigned int,std::string>(atoi(callno),replfile));
             break;
+#endif
         default:
             std::cerr << "error: unknown option " << opt << "\n";
             usage(argv[0]);

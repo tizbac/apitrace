@@ -67,7 +67,7 @@ public:
     int numFrames() const;
     int numCallsInFrame(int idx) const;
 
-    void callEdited(ApiTraceCall *call);
+    void callEdited(ApiTraceCall *call, bool save=true);
     void callReverted(ApiTraceCall *call);
     void callError(ApiTraceCall *call);
 
