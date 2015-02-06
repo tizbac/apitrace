@@ -38,6 +38,7 @@ IDirect3DDevice9* dx9_dev = NULL;
 IDirect3DQuery9* dx9_freq = NULL;
 IDirect3DQuery9* dx9_start = NULL;
 IDirect3DQuery9* dx9_end = NULL;
+IDirect3DQuery9* dx9_occlusion = NULL;
 std::map<unsigned int,std::string> dx9_shader_replacement;
 uint64_t callstart = 0;
 void
@@ -92,25 +93,36 @@ void d3dretrace::beginProfileDX9(trace::Call &call, bool isDraw)
         d3d9Dumper.pLastDevice->CreateQuery(D3DQUERYTYPE_TIMESTAMP,&dx9_start);
         d3d9Dumper.pLastDevice->CreateQuery(D3DQUERYTYPE_TIMESTAMP,&dx9_end);
         d3d9Dumper.pLastDevice->CreateQuery(D3DQUERYTYPE_TIMESTAMPFREQ,&dx9_freq);
+        d3d9Dumper.pLastDevice->CreateQuery(D3DQUERYTYPE_OCCLUSION,&dx9_occlusion);
     }
-   /* dx9_freq->Issue(D3DISSUE_BEGIN);
-    dx9_freq->Issue(D3DISSUE_END);*/
-    dx9_start->Issue(D3DISSUE_BEGIN);
-    dx9_start->Issue(D3DISSUE_END);
+    if ( retrace::profilingGpuTimes )
+    {
+        dx9_freq->Issue(D3DISSUE_END);
+        dx9_start->Issue(D3DISSUE_END);
+    }
+    if ( retrace::profilingPixelsDrawn )
+        dx9_occlusion->Issue(D3DISSUE_BEGIN);
     callstart = getCurrentTime();
 }
 
 void d3dretrace::endProfileDX9(trace::Call &call, bool isDraw)
 {
-    UINT64 freq=10000,ttstart,ttend;
+    IDirect3DPixelShader9 * pshader;
+    UINT64 freq=1,ttstart=0,ttend=0,pixels=0;
     UINT64 cpuend = getCurrentTime();
-    dx9_end->Issue(D3DISSUE_BEGIN);
-    dx9_end->Issue(D3DISSUE_END);
-
-   // while( dx9_freq->GetData(&freq, sizeof(UINT64),0) != S_OK) {}
+    if ( retrace::profilingGpuTimes )
+    {
+        dx9_end->Issue(D3DISSUE_END);
+    }
+    if ( retrace::profilingPixelsDrawn )
+        dx9_occlusion->Issue(D3DISSUE_END);
+    
+    d3d9Dumper.pLastDevice->GetPixelShader(&pshader);
+    while( dx9_occlusion->GetData(&pixels, sizeof(UINT64),0) != S_OK) {}
+    while( dx9_freq->GetData(&freq, sizeof(UINT64),0) != S_OK) {}
     while( dx9_start->GetData(&ttstart, sizeof(UINT64),1) != S_OK) {}
     while( dx9_end->GetData(&ttend, sizeof(UINT64),1) != S_OK) {}
-    retrace::profiler.addCall(call.no,call.sig->name,0,0,((double)ttstart/(double)freq)*1000000,(((double)(ttend-ttstart))/(double)freq)*1000000,callstart*1000,(cpuend-callstart)*1000,0,0,0,0);
+    retrace::profiler.addCall(call.no,call.sig->name,0,pixels,((double)ttstart/(double)freq)*1000000000,(((double)(ttend-ttstart))/(double)freq)*1000000000,callstart*1000,(cpuend-callstart)*1000,0,0,0,0);
 }
 
 DWORD * d3dretrace::CheckReplaceShader(DWORD * pFunction, trace::Call &call)
