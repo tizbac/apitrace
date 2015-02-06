@@ -26,7 +26,7 @@ rt_usages = {}
 resz = []
 renderdeps = []
 rt = None
-ds = "DEFAULT_DEPTH"
+zs = "DEFAULT_DEPTH"
 for line in iter(p.stdout.readline,''):
   s = line.split(" ")
   if len(s) < 2:
@@ -35,7 +35,7 @@ for line in iter(p.stdout.readline,''):
   if not callname.startswith("IDirect"):
     continue
   callno = int(s[0])
-  if callname == "IDirect3DDevice9::Present" or callname == "IDirect3DDevice9::PresentEx":
+  if callname == "IDirect3DDevice9::Present" or callname == "IDirect3DDevice9::PresentEx" or callname == "IDirect3DDevice9Ex::Present" or callname == "IDirect3DDevice9Ex::PresentEx":
     if curframe == frame:
       graphsurf = []
       usedlinks = []
@@ -75,7 +75,7 @@ for line in iter(p.stdout.readline,''):
     sys.stderr.write("\rFrame %6d    "%(curframe+1))
     sys.stderr.flush()
     curframe += 1
-  if callname == "IDirect3DDevice9::CreateTexture":
+  if callname == "IDirect3DDevice9::CreateTexture" or callname == "IDirect3DDevice9Ex::CreateTexture":
     fmt = getParameter(line,"Format")
     tex = getParameter(line,"ppTexture")
     w = int(getParameter(line,"Width"))
@@ -84,14 +84,14 @@ for line in iter(p.stdout.readline,''):
       rt_usages[tex] = True
     texture_format[tex] = fmt
     texture_sizes[tex] = (w,h)
-  if callname == "IDirect3DDevice9::CreateDepthStencilSurface":
+  if callname == "IDirect3DDevice9::CreateDepthStencilSurface" or callname == "IDirect3DDevice9Ex::CreateDepthStencilSurface" :
     fmt = getParameter(line,"Format")
     surf = getParameter(line,"ppSurface")
     w = int(getParameter(line,"Width"))
     h = int(getParameter(line,"Height"))
     surface_format[surf] = fmt
     surface_sizes[surf] = (w,h)
-  if callname == "IDirect3DTexture9::GetSurfaceLevel":
+  if callname == "IDirect3DTexture9::GetSurfaceLevel" or callname == "IDirect3DTexture9Ex::GetSurfaceLevel":
     texture_surface_ownership[getParameter(line,"this")] = getParameter(line,"ppSurfaceLevel")
     surface_texture_ownership[getParameter(line,"ppSurfaceLevel")] = getParameter(line,"this")
     level = int(getParameter(line,"Level"))
@@ -99,30 +99,30 @@ for line in iter(p.stdout.readline,''):
     surface_sizes[getParameter(line,"ppSurfaceLevel")] = (texture_sizes[getParameter(line,"this")][0]/(2**level),texture_sizes[getParameter(line,"this")][1]/(2**level))
   #print callno,callname
   if curframe == frame:
-    if callname == "IDirect3DDevice9::SetRenderTarget":
+    if callname == "IDirect3DDevice9::SetRenderTarget" or callname == "IDirect3DDevice9Ex::SetRenderTarget":
       rt = getParameter(line,"pRenderTarget")
       if not rt in surface_texture_ownership:
         orphanrt.append(rt)
-    if callname == "IDirect3DDevice9::SetPixelShader":
+    if callname == "IDirect3DDevice9::SetPixelShader" or callname == "IDirect3DDevice9Ex::SetPixelShader":
       curshader = getParameter(line,"pShader")
-    if callname == "IDirect3DDevice9::SetDepthStencilSurface":
+    if callname == "IDirect3DDevice9::SetDepthStencilSurface" or callname == "IDirect3DDevice9Ex::SetDepthStencilSurface":
       zs = getParameter(line,"pNewZStencil")
       if not zs in surface_texture_ownership:
         orphanrt.append(zs)
-    if callname == "IDirect3DDevice9::SetRenderState":
+    if callname == "IDirect3DDevice9::SetRenderState" or callname == "IDirect3DDevice9Ex::SetRenderState":
       #print getParameter(line,"State"),getParameter(line,"Value")
       if getParameter(line,"State") == "D3DRS_POINTSIZE" and getParameter(line,"Value") == "2141212672":#RESZ
         
         if zs and zs != "NULL":
           resz.append((current_textures[0],zs))
-    if callname == "IDirect3DDevice9::SetTexture":
+    if callname == "IDirect3DDevice9::SetTexture" or callname == "IDirect3DDevice9Ex::SetTexture":
       tex = getParameter(line,"pTexture")
       stage = int(getParameter(line,"Stage"))
       if stage > 16:
         sys.stderr.write("Warning: the game is trying to use invalid stage %d\n"%stage)
       else:
         current_textures[stage] = tex
-    if callname.startswith("IDirect3DDevice9::Draw"):
+    if callname.startswith("IDirect3DDevice9::Draw") or callname.startswith("IDirect3DDevice9Ex::Draw"):
       for tex in current_textures:
         if tex != "NULL" and tex in rt_usages and tex in texture_surface_ownership:
           if rt and rt != "NULL":
